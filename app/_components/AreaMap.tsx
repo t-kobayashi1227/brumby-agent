@@ -72,6 +72,14 @@ const FACILITIES: { kind: FacilityKind; dx: number; dy: number; num?: number }[]
   { kind: "medical", dx: -0.1, dy: 0.88 },
 ];
 
+/** Landmarks labelled on the area-analysis map. Same offsets as the station / 小学校 (#2) above: ≈960m and ≈640m. */
+const LANDMARKS = [
+  { kind: "station" as const, label: "駅", dx: -0.75, dy: -0.6 },
+  { kind: "school" as const, label: "小学校", dx: -0.45, dy: 0.45 },
+];
+
+const SCHOOL_RING = "#1d4ed8";
+
 interface Props {
   /** Overlay facility pins and zoom to the 1km radius (used on the 周辺環境 tab). */
   facilities?: boolean;
@@ -105,6 +113,24 @@ export default function AreaMap({ facilities = false, className = "" }: Props) {
             <text x={CX + km * 3 * 0.71 + 4} y={CY - km * 3 * 0.71 + 12} fontSize={11} fontWeight={700} fill="#16233f">3km</text>
           </>
         )}
+
+        {!facilities &&
+          LANDMARKS.map((l) => {
+            const x = CX + l.dx * km;
+            const y = CY + l.dy * km;
+            return (
+              <g key={l.kind}>
+                {l.kind === "station" ? (
+                  <rect x={x - 6} y={y - 6} width={12} height={12} rx={1.5} fill={FACILITY_STYLE.station.color} stroke="#ffffff" strokeWidth={1.5} />
+                ) : (
+                  <circle cx={x} cy={y} r={6} fill="#ffffff" stroke={SCHOOL_RING} strokeWidth={2.5} />
+                )}
+                <text x={x - 10} y={y + 4} textAnchor="end" fontSize={11} fontWeight={700} fill="#16233f" stroke="#ffffff" strokeWidth={3} paintOrder="stroke">
+                  {l.label}
+                </text>
+              </g>
+            );
+          })}
 
         {facilities &&
           FACILITIES.map((f, idx) => {
@@ -156,6 +182,18 @@ export default function AreaMap({ facilities = false, className = "" }: Props) {
           <span className="inline-block w-4 border-t-2 border-dashed border-ink" />
           {facilities ? "半径1km" : "半径1km・3km"}
         </div>
+        {!facilities && (
+          <>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block w-2.5 h-2.5 rounded-[2px]" style={{ backgroundColor: FACILITY_STYLE.station.color }} />
+              駅
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-white border-2" style={{ borderColor: SCHOOL_RING }} />
+              小学校
+            </div>
+          </>
+        )}
         {facilities &&
           (Object.keys(FACILITY_STYLE) as FacilityKind[]).map((k) => (
             <div key={k} className="flex items-center gap-1.5">

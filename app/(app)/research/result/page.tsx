@@ -20,6 +20,7 @@ import {
   surroundingSummary,
   nearbyFacilities,
   formatNumber,
+  targetPriceMan,
   CENSUS_SOURCE,
   MLIT_SOURCE,
 } from "../../../_lib/data";
@@ -95,22 +96,64 @@ export default function ResearchResultPage() {
 
       {tab === "area" && (
         <div className="grid grid-cols-2 gap-4">
-          <div className={`${card} p-4`}>
+          <div className={`${card} p-4 flex flex-col`}>
             <div className="text-[13px] font-bold text-ink mb-2.5">子育て世帯の割合（町丁目別）</div>
             <AreaMap />
           </div>
-          <div className={`${card} p-4.5 flex flex-col`}>
-            <div className="text-[13px] font-bold text-ink mb-3.5">エリアの基本データ（半径3km圏）</div>
-            <div className="grid grid-cols-2 gap-3">
-              {areaStats.map((a, i) => (
-                <div key={i} className={`${statBox} p-3`}>
-                  <div className="text-xs text-muted mb-1.5">{a.label}</div>
-                  <div className="text-[17px] font-extrabold text-ink">{a.value}</div>
-                  <div className="text-[11px] text-muted mt-0.5">{a.sub}</div>
+          <div className="flex flex-col gap-3">
+            <div className={`${card} px-4 py-3 flex-1 flex flex-col`}>
+              <div className="text-[13px] font-bold text-ink mb-2">エリアの基本データ（半径3km圏）</div>
+              <div className="grid grid-cols-2 gap-2">
+                {areaStats.map((a, i) => (
+                  <div key={i} className={`${statBox} px-3 py-1.5 flex items-baseline gap-2`}>
+                    <div className="text-[11px] text-muted shrink-0">{a.label}</div>
+                    <div className="text-sm font-extrabold text-ink">{a.value}</div>
+                    {a.sub && <div className="text-[10px] text-muted">（{a.sub}）</div>}
+                  </div>
+                ))}
+              </div>
+              <SourceNote className="mt-auto pt-2">{CENSUS_SOURCE}</SourceNote>
+            </div>
+
+            <div className={`${card} px-4 py-3 flex-1 flex flex-col`}>
+              <div className="text-[13px] font-bold text-ink mb-1.5">周辺の取引価格帯（戸建）</div>
+              <div className="flex items-end gap-2.5 h-[78px]">
+                {priceHistogram.map((b) => (
+                  <div key={b.label} className="flex flex-col items-center gap-0.5 flex-1">
+                    <div className={`text-[11px] font-bold ${b.hasTarget ? "text-brand" : "text-ink"}`}>{b.value}</div>
+                    <div className={`w-full rounded-t ${b.hasTarget ? "bg-brand" : "bg-chart"}`} style={{ height: Math.round(b.ratio * 48) }} />
+                    <div className={`text-[10px] text-center whitespace-nowrap ${b.hasTarget ? "text-brand font-bold" : "text-muted"}`}>{b.label}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-between text-[10px] text-muted mt-1">
+                <span>単位：万円／直近1年の取引・成約価格 {priceHistogramTotal}件</span>
+                <span className="text-brand font-bold">■ 対象物件（{formatNumber(targetPriceMan)}万円）</span>
+              </div>
+              <SourceNote className="mt-auto pt-1.5">{MLIT_SOURCE}</SourceNote>
+            </div>
+
+            <div className={`${card} px-4 py-3 flex-1 flex flex-col`}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className="text-[13px] font-bold text-ink">入力した競合物件</div>
+                <span className="rounded-full bg-divider border border-line px-2 py-px text-[10px] font-bold text-muted">ご入力</span>
+              </div>
+              <div className="grid grid-cols-[1.3fr_1fr_.8fr_.8fr] gap-2 text-[10px] text-muted px-1 pb-1 border-b border-canvas">
+                <div>所在地</div>
+                <div>価格</div>
+                <div>間取り</div>
+                <div>駅徒歩</div>
+              </div>
+              {compData.map((c, i) => (
+                <div key={i} className="grid grid-cols-[1.3fr_1fr_.8fr_.8fr] gap-2 py-1 px-1 border-b border-divider text-xs text-body">
+                  <div>{c.location.replace("新潟市中央区", "")}</div>
+                  <div className="font-bold text-accent">{c.price}万円</div>
+                  <div>{c.layout}</div>
+                  <div>{c.walk}分</div>
                 </div>
               ))}
+              <SourceNote className="mt-auto pt-1.5">競合物件の入力（{surveyDate}）</SourceNote>
             </div>
-            <SourceNote className="mt-auto pt-4">{CENSUS_SOURCE}</SourceNote>
           </div>
         </div>
       )}

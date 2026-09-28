@@ -103,7 +103,7 @@ export const aiResultTabDefs = [
 
 /** Center of the market entered on the research input step (万円). */
 const marketCenterPrice = 3500;
-const targetPriceMan = 3780;
+export const targetPriceMan = 3780;
 
 export const diagnosisSummary = {
   competition: "やや競合が多い",
@@ -153,17 +153,21 @@ export const areaStats = [
 
 /** Transaction prices over the last year (万円 bins). The count total is what the page reports. */
 const priceHistData = [
-  { label: "〜3,400", value: 3 },
-  { label: "3,400〜3,700", value: 6 },
-  { label: "3,700〜4,000", value: 10 },
-  { label: "4,000〜4,300", value: 6 },
-  { label: "4,300〜", value: 3 },
+  { label: "〜3,400", min: -Infinity, max: 3400, value: 3 },
+  { label: "3,400〜3,700", min: 3400, max: 3700, value: 6 },
+  { label: "3,700〜4,000", min: 3700, max: 4000, value: 10 },
+  { label: "4,000〜4,300", min: 4000, max: 4300, value: 6 },
+  { label: "4,300〜", min: 4300, max: Infinity, value: 3 },
 ];
 const maxHist = Math.max(...priceHistData.map((p) => p.value));
 export const priceHistogram = priceHistData.map((p) => ({
   label: p.label,
   value: p.value,
+  /** Bar height as a share of the tallest bin (0–1); callers scale it to their chart height. */
+  ratio: p.value / maxHist,
   height: Math.round((p.value / maxHist) * 120),
+  /** True for the bin the sample property's price falls into. */
+  hasTarget: targetPriceMan >= p.min && targetPriceMan < p.max,
 }));
 export const priceHistogramTotal = priceHistData.reduce((n, p) => n + p.value, 0);
 
