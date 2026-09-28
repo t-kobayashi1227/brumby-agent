@@ -11,14 +11,14 @@ const notoSansJP = Noto_Sans_JP({
 });
 
 export const metadata: Metadata = {
-  title: "BRUMBY AI｜物件販売支援システム",
+  title: "BRUMBY AI物件販売戦略",
   description:
-    "データ×AI×人の力で、不動産の「売れる」を実現する物件販売支援システムのモックアップ",
+    "データ×AI×人の力で、不動産の「売れる」を実現する BRUMBY AI物件販売戦略のモックアップ",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="ja" className={`${notoSansJP.variable} h-full antialiased`}>
+    <html lang="ja" suppressHydrationWarning className={`${notoSansJP.variable} h-full antialiased`}>
       <body className="min-h-screen flex flex-col bg-canvas text-ink font-sans">
         <PrototypeNav />
         {children}

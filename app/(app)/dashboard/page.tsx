@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import StatusBadge from "../../_components/StatusBadge";
+import { ManualEntryNote } from "../../_components/Notes";
 import { kpis, properties, type PropertyItem } from "../../_lib/data";
 import { card, tableHead } from "../../_lib/ui";
 
@@ -11,7 +12,7 @@ type SortKey = "default" | "days" | "inquiries" | "tours";
 
 const sortOptions: { key: SortKey; label: string }[] = [
   { key: "default", label: "登録順" },
-  { key: "days", label: "掲載日数が多い順" },
+  { key: "days", label: "販売期間が長い順" },
   { key: "inquiries", label: "問合せが多い順" },
   { key: "tours", label: "見学が多い順" },
 ];
@@ -34,12 +35,18 @@ export default function DashboardPage() {
             <div className="text-[13px]  mb-2">{k.label}</div>
             <div className="text-2xl font-extrabold text-ink">{k.value}</div>
             <div className="text-xs font-bold text-[#1a8a4a] mt-1.5">{k.delta}</div>
+            {k.manual && <ManualEntryNote className="block mt-1" />}
           </div>
         ))}
       </div>
-      <div className={`${card} p-5`}>
+      <div id="properties" className={`${card} p-5 scroll-mt-4`}>
         <div className="flex justify-between items-center mb-3.5">
-          <div className="text-lg font-bold text-ink">販売中物件の状況</div>
+          <div className="flex items-baseline gap-3">
+            <div className="text-lg font-bold text-ink">販売中物件の状況</div>
+            <span className="text-[11px] text-muted">
+              問合せ・見学は今月の件数（<ManualEntryNote />）
+            </span>
+          </div>
           <div className="relative">
             <button
               type="button"
@@ -74,7 +81,7 @@ export default function DashboardPage() {
         </div>
         <div className={`${tableHead} grid-cols-[2.4fr_1fr_1fr_1fr_1fr]`}>
           <div>物件</div>
-          <div>掲載日数</div>
+          <div>販売期間</div>
           <div>問合せ</div>
           <div>見学</div>
           <div>AI診断</div>

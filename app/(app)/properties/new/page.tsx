@@ -18,9 +18,9 @@ export default function NewPropertyPage() {
     landArea: "180.25",
     buildingArea: "105.98",
     parking: "2",
-    access: "JR上所駅 徒歩12分",
+    access: "最寄り駅 徒歩12分",
     layout: "4LDK",
-    age: "2025年6月（新築）",
+    age: "2026年6月（新築）",
   });
 
   const update = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -110,7 +110,7 @@ export default function NewPropertyPage() {
                   </label>
                   <label className={checkLabel}>
                     <input type="checkbox" defaultChecked />
-                    駐車2台
+                    駐車場2台
                   </label>
                   <label className={checkLabel}>
                     <input type="checkbox" />

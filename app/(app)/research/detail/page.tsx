@@ -3,14 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { compData } from "../../../_lib/data";
-import { card, fieldLabel, input, btnPrimary, btnSecondary, stripePlaceholder, compTabClass } from "../../../_lib/ui";
+import { card, fieldLabel, input, btnPrimary, btnSecondary, compTabClass } from "../../../_lib/ui";
 
 export default function ResearchDetailPage() {
   const [tab, setTab] = useState(0);
   const activeComp = compData[tab];
   return (
     <div className={`${card} p-6 max-w-[640px]`}>
-      <div className="text-sm font-bold text-ink mb-3.5">気になる競合物件（最大3件）</div>
+      <div className="text-sm font-bold text-ink mb-1">気になる競合物件（最大3件）</div>
+      <div className="text-[11px] text-muted mb-3.5">価格・間取りなどの条件だけを入力します（ポータルサイトの写真や文章は転載しません）。</div>
       <div className="flex gap-1.5 mb-4.5">
         {compData.map((_, i) => (
           <div key={i} onClick={() => setTab(i)} className={compTabClass(tab === i)}>
@@ -18,7 +19,7 @@ export default function ResearchDetailPage() {
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-2 gap-4" key={tab}>
+      <div key={tab}>
         <div className="grid gap-3">
           <div>
             <label className={fieldLabel}>販売価格（万円）</label>
@@ -49,7 +50,7 @@ export default function ResearchDetailPage() {
             </div>
             <div>
               <label className={fieldLabel}>駐車場（台）</label>
-              <input defaultValue={activeComp.parking} className={input} />
+              <input defaultValue={activeComp.parking} placeholder="未入力" className={input} />
             </div>
           </div>
           <div>
@@ -57,7 +58,6 @@ export default function ResearchDetailPage() {
             <textarea defaultValue={activeComp.features} rows={3} className={`${input} resize-none`} />
           </div>
         </div>
-        <div className={`${stripePlaceholder} aspect-[4/3] rounded-lg text-[11px] h-fit`}>競合物件写真</div>
       </div>
       <div className="flex justify-between mt-6">
         <Link href="/research/input" className={btnSecondary}>

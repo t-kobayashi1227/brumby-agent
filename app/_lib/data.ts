@@ -25,7 +25,19 @@ export type ReportKey = "strategy" | "monitor" | "summary" | "ad";
 export type ReportFormat = "pdf" | "ppt";
 export type MediaBudget = "10" | "20" | "30";
 
+/** 1,318 → "1,318" */
+export function formatNumber(n: number): string {
+  return n.toLocaleString("ja-JP");
+}
+
 // ---- static mock data ----
+
+/** The mock's "today": every date shown in the prototype is on or before this day. */
+export const surveyDate = "2026/09/28";
+
+// Data vintages shown in the "出典" lines of the analysis panels.
+export const CENSUS_SOURCE = "国勢調査（2020年）";
+export const MLIT_SOURCE = "国土交通省 不動産情報ライブラリ（2026年9月取得）";
 
 export const properties: PropertyItem[] = [
   { name: "中央区上近江 新築戸建", price: "3,780万円", days: 45, views: 386, inquiries: 8, tours: 3, status: "注意" },
@@ -35,17 +47,42 @@ export const properties: PropertyItem[] = [
   { name: "秋葉区新津 新築戸建", price: "2,980万円", days: 72, views: 134, inquiries: 1, tours: 0, status: "要改善" },
 ];
 
+/** The sample property used throughout the research / strategy flow (= properties[0]). */
+export const targetProperty = {
+  ...properties[0],
+  type: "新築戸建",
+  address: "新潟市中央区上近江1丁目",
+  layout: "4LDK",
+  land: 180.25,
+  building: 105.98,
+  parking: 2,
+  access: "最寄り駅 徒歩12分",
+};
+
+// Competitors are entered by hand (max 3). Blank fields were simply not entered.
 export const compData: CompetitorItem[] = [
   { price: "3,580", location: "新潟市中央区○○町", land: "135", building: "102", layout: "4LDK", walk: "12", parking: "2", features: "南向き・太陽光発電付き" },
-  { price: "3,420", location: "新潟市中央区△△町", land: "128", building: "98", layout: "4LDK", walk: "18", parking: "2", features: "角地・完成済み" },
-  { price: "3,690", location: "新潟市東区□□町", land: "140", building: "105", layout: "4LDK", walk: "9", parking: "3", features: "大手ハウスメーカー施工・全館空調" },
+  { price: "4,180", location: "新潟市中央区△△町", land: "180", building: "110", layout: "4LDK", walk: "10", parking: "", features: "角地・完成済み" },
+  { price: "3,880", location: "新潟市中央区□□町", land: "158", building: "104", layout: "3LDK", walk: "18", parking: "", features: "大手ハウスメーカー施工・全館空調" },
 ];
 
+/** Average land area of the entered competitors, rounded to ㎡. */
+export const compAvgLand = Math.round(compData.reduce((n, c) => n + Number(c.land), 0) / compData.length);
+
+/** Listing counts entered on the research input step (the two portals overlap, so they are never summed). */
+export const listingCounts = [
+  { site: "SUUMO", count: 18 },
+  { site: "アットホーム", count: 14 },
+];
+
+// Monthly KPIs are the totals of the per-property figures shown on the 販売モニター list.
+const total = (key: "views" | "inquiries" | "tours") => properties.reduce((n, p) => n + p[key], 0);
+
 export const kpis = [
-  { label: "登録物件数", value: "5件", delta: "" },
-  { label: "今月の閲覧数", value: "1,245件", delta: "↑ +18%" },
-  { label: "今月の問合せ数", value: "23件", delta: "↑ +15%" },
-  { label: "今月の見学予約", value: "8件", delta: "↑ +33%" },
+  { label: "登録物件数", value: `${properties.length}件`, delta: "", manual: false },
+  { label: "今月の閲覧数", value: `${formatNumber(total("views"))}件`, delta: "↑ +18%", manual: true },
+  { label: "今月の問合せ数", value: `${total("inquiries")}件`, delta: "↑ +15%", manual: true },
+  { label: "今月の見学予約", value: `${total("tours")}件`, delta: "↑ +33%", manual: true },
 ];
 
 export const regStepDefs = [
@@ -60,73 +97,51 @@ export const aiResultTabDefs = [
   { key: "area", label: "エリア分析" },
   { key: "price", label: "価格相場" },
   { key: "competitor", label: "競合物件" },
-  { key: "deals", label: "成約事例" },
+  { key: "deals", label: "取引価格の事例" },
   { key: "surroundings", label: "周辺環境" },
 ];
 
+/** Center of the market entered on the research input step (万円). */
+const marketCenterPrice = 3500;
+const targetPriceMan = 3780;
+
 export const diagnosisSummary = {
-  surveyDate: "2025/09/16",
   competition: "やや競合が多い",
-  stats: [
-    { label: "競合物件数（合計）", value: "32", unit: "件", highlight: false },
-    { label: "中心価格帯", value: "約3,500", unit: "万円", highlight: false },
-    { label: "対象物件との価格差", value: "+約280", unit: "万円", highlight: true },
-  ],
+  centerPrice: marketCenterPrice,
+  priceGap: targetPriceMan - marketCenterPrice,
   comment:
-    "周辺エリアでは新築戸建の供給が増加しており、価格競争が強まっています。対象物件は競合の中心価格帯よりやや高い位置にありますが、「駐車2台」「小学校徒歩8分」「ZEH仕様」などの強みがあり、価格訴求よりも子育て世帯向けの住環境・性能訴求が有効です。",
+    "ポータルサイトの掲載件数が多く、価格競争が強い状況です。対象物件（3,780万円）は競合の中心（約3,500万円）より約280万円高い一方、周辺の取引価格の平均（約3,850万円）の範囲内に収まっています。「駐車場2台」「小学校徒歩8分」「ZEH仕様」などの強みがあり、価格訴求よりも子育て世帯向けの住環境・性能訴求が有効です。",
   actions: [
-    "価格よりも付加価値（ZEH・学校・駐車）を前面に訴求",
+    "価格よりも付加価値（ZEH・学校・駐車場）を前面に訴求",
     "SNS広告で子育てファミリー層へアプローチ",
     "2週間後に再度競合状況を確認し、戦略を見直す",
   ],
 };
 
-export const dealStats = [
-  { label: "対象エリアの成約件数", value: "32件", note: "▲ +23%（前月比）", positive: true },
-  { label: "平均成約価格", value: "3,580万円", note: "↑ +5%（前月比）", positive: true },
-  { label: "平均販売期間", value: "38日", note: "▲ -12日（前月比）", positive: true },
-  { label: "最多間取り", value: "4LDK", note: "（12件・37%）", positive: false },
-];
-
+/**
+ * Sample rows from the MLIT transaction-price data (district + quarter granularity only).
+ * None of these are the competitors currently on sale.
+ */
 export const dealCases = [
-  { name: "新潟市中央区上近江2丁目", type: "新築戸建", price: "3,780万円", land: 150, building: 102, layout: "4LDK", age: "1年", salesDays: 28, date: "2025/08/20" },
-  { name: "新潟市中央区女池南3丁目", type: "新築戸建", price: "3,480万円", land: 135.2, building: 98.5, layout: "4LDK", age: "2年", salesDays: 45, date: "2025/08/12" },
-  { name: "新潟市中央区上近江1丁目", type: "中古戸建", price: "3,200万円", land: 165.3, building: 105.1, layout: "4LDK", age: "5年", salesDays: 52, date: "2025/07/28" },
-  { name: "新潟市中央区鳥屋野2丁目", type: "新築戸建", price: "3,880万円", land: 158, building: 104, layout: "4LDK", age: "新築", salesDays: 25, date: "2025/07/18" },
-  { name: "新潟市中央区上所3丁目", type: "中古戸建", price: "2,980万円", land: 142.5, building: 96.3, layout: "3LDK", age: "8年", salesDays: 68, date: "2025/07/05" },
-  { name: "新潟市中央区関屋1丁目", type: "新築戸建", price: "3,650万円", land: 138, building: 101, layout: "4LDK", age: "1年", salesDays: 31, date: "2025/06/28" },
-];
-
-export const dealAppealPoints = ["南向きで日当たり良好", "駐車場2台分", "小学校まで徒歩8分", "周辺に商業施設が充実", "ZEH仕様・省エネ性能"];
-
-export const dealSuccessPoints = [
-  "同エリアの同規模物件と比較して価格が適正",
-  "築浅・4LDKの需要が高く早期成約につながった",
-  "南向き・駐車場2台が購入者の決め手",
-  "周辺環境（学校・商業施設）が評価された",
-  "内覧から成約までの期間が短い傾向",
+  { district: "中央区上近江", period: "2026年第2四半期", price: "3,650万円", land: 165, building: 102 },
+  { district: "中央区女池南", period: "2026年第2四半期", price: "3,480万円", land: 140, building: 98 },
+  { district: "中央区鳥屋野", period: "2026年第1四半期", price: "3,950万円", land: 172, building: 106 },
+  { district: "中央区上所", period: "2026年第1四半期", price: "3,300万円", land: 142, building: 96 },
+  { district: "中央区上近江", period: "2026年第1四半期", price: "4,050万円", land: 168, building: 108 },
+  { district: "中央区女池南", period: "2026年第1四半期", price: "3,720万円", land: 155, building: 100 },
 ];
 
 export const surroundingSummary = [
-  { icon: "🚉", label: "鉄道・交通", value: "駅 徒歩12分 / バス停 徒歩3分" },
+  { icon: "🚉", label: "鉄道", value: "最寄り駅 徒歩12分（約960m）" },
   { icon: "🏫", label: "教育施設", value: "保育園3件 / 小学校2件 / 中学校1件" },
-  { icon: "🛒", label: "商業施設", value: "スーパー4件 / コンビニ6件 / ドラッグストア3件" },
   { icon: "🏥", label: "医療施設", value: "病院2件 / クリニック8件" },
-  { icon: "🌳", label: "公園・レジャー", value: "公園5件 / 大型公園1件" },
-  { icon: "🍽️", label: "飲食・その他", value: "飲食店15件 / 金融機関6件" },
 ];
 
+/** Nearest facilities, closest first. Walking time = distance ÷ 80m/分. */
 export const nearbyFacilities = [
-  { name: "上近江保育園", type: "保育園", minutes: 3, distance: "240m" },
-  { name: "上近江小学校", type: "小学校", minutes: 6, distance: "480m" },
-  { name: "鳥屋野中学校", type: "中学校", minutes: 14, distance: "1.1km" },
-];
-
-export const surroundingScores = [
-  { label: "教育環境", score: "4.5", desc: "保育園・小中学校が近く、子育てしやすい環境です。", icon: "/education_icon.png", scoreColor: "text-[#1a8a4a]" },
-  { label: "生活利便性", score: "4.3", desc: "スーパー・コンビニ・ドラッグストアが充実しています。", icon: "/life_icon.png", scoreColor: "text-[#e8920c]" },
-  { label: "交通利便性", score: "4.0", desc: "駅徒歩12分で都心へのアクセスも良好です。", icon: "/traffic_icon.png", scoreColor: "text-[#e6303e]" },
-  { label: "住環境・自然", score: "4.2", desc: "公園や緑地が多く、落ち着いた住環境です。", icon: "/nature_icon.png", scoreColor: "text-[#1a8a4a]" },
+  { name: "保育園", minutes: 3, distance: "240m" },
+  { name: "小学校", minutes: 8, distance: "640m" },
+  { name: "中学校", minutes: 12, distance: "960m" },
 ];
 
 export const areaStats = [
@@ -136,18 +151,13 @@ export const areaStats = [
   { label: "持家率", value: "61.2%", sub: "市平均58.0%" },
 ];
 
-export const similarProperties = [
-  { price: "3,780万円", land: 150, building: 102, layout: "4LDK", built: "2025年", area: "上所駅 徒歩15分" },
-  { price: "4,180万円", land: 180, building: 110, layout: "4LDK", built: "2025年", area: "上近江エリア 駅徒歩10分" },
-  { price: "3,880万円", land: 158, building: 104, layout: "3LDK", built: "2025年", area: "鳥屋野エリア 駅徒歩18分" },
-];
-
+/** Transaction prices over the last year (万円 bins). The count total is what the page reports. */
 const priceHistData = [
-  { label: "<3,000", value: 5 },
-  { label: "3,000〜3,500", value: 12 },
-  { label: "3,500〜4,000", value: 20 },
-  { label: "4,000〜4,500", value: 15 },
-  { label: ">4,500", value: 7 },
+  { label: "〜3,400", value: 3 },
+  { label: "3,400〜3,700", value: 6 },
+  { label: "3,700〜4,000", value: 10 },
+  { label: "4,000〜4,300", value: 6 },
+  { label: "4,300〜", value: 3 },
 ];
 const maxHist = Math.max(...priceHistData.map((p) => p.value));
 export const priceHistogram = priceHistData.map((p) => ({
@@ -155,6 +165,7 @@ export const priceHistogram = priceHistData.map((p) => ({
   value: p.value,
   height: Math.round((p.value / maxHist) * 120),
 }));
+export const priceHistogramTotal = priceHistData.reduce((n, p) => n + p.value, 0);
 
 export const strategyTabDefs = [
   { key: "overall", label: "総合評価" },
@@ -165,12 +176,12 @@ export const targetList = [
   {
     num: 1,
     title: "30〜40代 子育てファミリー（最重点）",
-    desc: ["新潟市内または近隣在住、賃貸からの住み替え層", "世帯年収600〜800万円程度", "小学校徒歩圏・駐車2台・4LDKに関心"],
+    desc: ["新潟市内または近隣在住、賃貸からの住み替え層", "小学校徒歩圏・駐車場2台・4LDKに関心"],
   },
   {
     num: 2,
     title: "20代後半〜30代前半の共働き夫婦",
-    desc: ["利便性の高いエリアでの新築を検討", "世帯年収500〜700万円程度", "駅近・買い物・通勤の利便性を重視"],
+    desc: ["利便性の高いエリアでの新築を検討", "駅までの距離・通勤の利便性を重視"],
   },
   {
     num: 3,
@@ -180,61 +191,63 @@ export const targetList = [
 ];
 
 export const appealList = [
-  "小学校徒歩8分・子育て環境の良さ",
-  "家族が集まる広い4LDK・駐車2台",
-  "ZEH・省エネ性能で快適な暮らし",
-  "駅や商業施設へのアクセス",
+  { text: "小学校徒歩8分・子育て環境の良さ", basis: "30〜40代の割合28.6%（市平均24.1%）" },
+  { text: "家族が集まる広い4LDK・駐車場2台", basis: `土地180.25㎡（入力した競合3件の平均 約${compAvgLand}㎡）` },
+  { text: "ZEH・省エネ性能で快適な暮らし", basis: "物件情報（ZEH仕様）" },
+  { text: "最寄り駅 徒歩12分のアクセス", basis: "最寄り駅まで約960m" },
 ];
 
 export const directionList = [
-  "価格は周辺相場と同水準で訴求",
+  "価格は取引相場の範囲内。競合の中心より高いため、価格ではなく付加価値（ZEH・学校・駐車場）で訴求",
   "子育て・住環境を前面に",
   "Webと周辺販促の組み合わせ",
   "見学会での体験訴求が有効",
 ];
 
-interface MediaItem {
-  name: string;
-  pct: number;
-  amt: string;
-  color: string;
-}
+const mediaDefs = [
+  { name: "Instagram・Facebook広告", color: "#3b6fd6" },
+  { name: "ポスティング（エリア配布）", color: "#f2a93b" },
+  { name: "チラシ制作・印刷", color: "#9b7bd1" },
+  { name: "物件専用LP", color: "#4caf7d" },
+];
 
-export const budgetPlans: Record<MediaBudget, { items: MediaItem[] }> = {
-  "10": {
-    items: [
-      { name: "Instagram・Facebook広告", pct: 40, amt: "4万円", color: "#3b6fd6" },
-      { name: "ポスティング（エリア配布）", pct: 25, amt: "2.5万円", color: "#f2a93b" },
-      { name: "物件専用LP", pct: 20, amt: "2万円", color: "#4caf7d" },
-      { name: "チラシ制作・印刷", pct: 15, amt: "1.5万円", color: "#9b7bd1" },
-    ],
-  },
-  "20": {
-    items: [
-      { name: "Instagram・Facebook広告", pct: 40, amt: "8万円", color: "#3b6fd6" },
-      { name: "ポスティング（エリア配布）", pct: 25, amt: "5万円", color: "#f2a93b" },
-      { name: "物件専用LP", pct: 20, amt: "4万円", color: "#4caf7d" },
-      { name: "チラシ制作・印刷", pct: 15, amt: "3万円", color: "#9b7bd1" },
-    ],
-  },
-  "30": {
-    items: [
-      { name: "Instagram・Facebook広告", pct: 40, amt: "12万円", color: "#3b6fd6" },
-      { name: "ポスティング（エリア配布）", pct: 25, amt: "7.5万円", color: "#f2a93b" },
-      { name: "物件専用LP", pct: 20, amt: "6万円", color: "#4caf7d" },
-      { name: "チラシ制作・印刷", pct: 15, amt: "4.5万円", color: "#9b7bd1" },
-    ],
-  },
+/** BRUMBY's allocation rule table: 万円 per medium (same order as mediaDefs) for each total budget. */
+const budgetRules: Record<MediaBudget, { amounts: number[]; notes?: (string | undefined)[] }> = {
+  "10": { amounts: [5, 3, 2, 0], notes: [undefined, undefined, undefined, "既存の物件ページを活用"] },
+  "20": { amounts: [8, 5, 3, 4] },
+  "30": { amounts: [12, 7, 5, 6] },
 };
 
+export interface MediaItem {
+  name: string;
+  color: string;
+  amount: number;
+  amt: string;
+  pct: number;
+  note?: string;
+}
+
+export function budgetItems(budget: MediaBudget): MediaItem[] {
+  const { amounts, notes } = budgetRules[budget];
+  const sum = amounts.reduce((n, a) => n + a, 0);
+  return mediaDefs.map((m, i) => ({
+    ...m,
+    amount: amounts[i],
+    amt: amounts[i] === 0 ? "0円" : `${amounts[i]}万円`,
+    pct: Math.round((amounts[i] / sum) * 100),
+    note: notes?.[i],
+  }));
+}
+
 export function computeDonut(budget: MediaBudget) {
-  const items = budgetPlans[budget].items;
+  const items = budgetItems(budget);
+  const sum = items.reduce((n, it) => n + it.amount, 0);
   let acc = 0;
   const stops = items
     .map((it) => {
-      const start = acc;
-      acc += it.pct;
-      return `${it.color} ${start}% ${acc}%`;
+      const start = (acc / sum) * 100;
+      acc += it.amount;
+      return `${it.color} ${start}% ${(acc / sum) * 100}%`;
     })
     .join(", ");
   return { gradient: `conic-gradient(${stops})`, legend: items };
@@ -243,8 +256,8 @@ export function computeDonut(budget: MediaBudget) {
 export const mediaRoleTable = [
   { media: "Instagram・Facebook広告", target: "30〜40代ファミリー", effect: "認知拡大・見学予約への誘導" },
   { media: "ポスティング", target: "周辺1〜2kmの住み替え層", effect: "地域での認知・問い合わせ増加" },
-  { media: "物件専用LP", target: "検討層全般", effect: "詳細情報の提供・見学予約獲得" },
   { media: "チラシ制作・印刷", target: "現地周辺・イベント告知", effect: "見学会集客・信頼感の向上" },
+  { media: "物件専用LP", target: "検討層全般", effect: "詳細情報の提供・見学予約獲得" },
 ];
 
 export const monitorFilterDefs = [
@@ -262,21 +275,53 @@ export const monitorDetailTabDefs = [
   { key: "history", label: "履歴" },
 ];
 
+/** SUUMO listing counts as recorded by manual entry. */
 const trendData = [
-  { label: "9/1", value: 32 },
-  { label: "9/16", value: 28 },
-  { label: "9/30", value: 25 },
-  { label: "10/14", value: 23 },
+  { label: "8/31", value: 22 },
+  { label: "9/7", value: 21 },
+  { label: "9/14", value: 20 },
+  { label: "9/28", value: 18 },
 ];
 const maxTrend = Math.max(...trendData.map((t) => t.value));
 export const competitionTrend = trendData.map((t) => ({
   label: t.label,
+  date: `2026/${t.label
+    .split("/")
+    .map((n) => n.padStart(2, "0"))
+    .join("/")}`,
   value: t.value,
   height: Math.round((t.value / maxTrend) * 100),
 }));
+/** Change over the last two weeks (9/14 → 9/28). */
+export const competitionTwoWeekDrop = trendData[trendData.length - 2].value - trendData[trendData.length - 1].value;
+
+/** Weeks of the current month used for the per-property response breakdown. */
+const responseWeeks = ["9/1〜9/7", "9/8〜9/14", "9/15〜9/21", "9/22〜9/28"];
+const responseWeights = [0.21, 0.25, 0.26, 0.28];
+
+/** Splits a monthly total into weeks; the last week takes the remainder so the weeks always add up to the total. */
+function splitByWeek(totalValue: number): number[] {
+  const parts = responseWeights.slice(0, -1).map((w) => Math.round(totalValue * w));
+  return [...parts, totalValue - parts.reduce((n, v) => n + v, 0)];
+}
+
+export function weeklyResponse(p: PropertyItem) {
+  const views = splitByWeek(p.views);
+  const inquiries = splitByWeek(p.inquiries);
+  const tours = splitByWeek(p.tours);
+  return responseWeeks.map((label, i) => ({ label, views: views[i], inquiries: inquiries[i], tours: tours[i] }));
+}
+
+/** "2026/09/28" minus `days` → "2026/08/14" (UTC so server and client agree). */
+export function daysBeforeSurvey(days: number): string {
+  const [y, m, d] = surveyDate.split("/").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d - days));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${dt.getUTCFullYear()}/${pad(dt.getUTCMonth() + 1)}/${pad(dt.getUTCDate())}`;
+}
 
 export const planDefs = [
-  { key: "spot", name: "スポットプラン", desc: "1物件から気軽にAI分析", price: "4,980円（税込）" },
-  { key: "strategy", name: "販売戦略プラン", desc: "新規物件の販売戦略をAIで作成", price: "月額 19,800円（税込）" },
-  { key: "monitor", name: "販売戦略＋モニタープラン", desc: "売れるまでAIが継続サポート", price: "月額 19,800円（税込）" },
+  { key: "spot", name: "スポットプラン", desc: "1物件から気軽にAI分析", price: "1物件 5,000円（税別）" },
+  { key: "strategy", name: "販売戦略プラン", desc: "新規物件の販売戦略をAIで作成", price: "月額 30,000円（税別）" },
+  { key: "monitor", name: "販売戦略＋モニタープラン", desc: "売れるまでAIが継続サポート", price: "月額 40,000円（税別）" },
 ];

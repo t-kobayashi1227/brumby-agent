@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import StatusBadge from "../../_components/StatusBadge";
+import { FutureFeatureNotice, ManualEntryNote } from "../../_components/Notes";
 import { properties, monitorFilterDefs } from "../../_lib/data";
 import { card, fieldLabel, tableHead, monitorFilterPillClass } from "../../_lib/ui";
 
@@ -13,8 +14,9 @@ export default function MonitorPage() {
 
   return (
     <>
+      <FutureFeatureNotice />
       <div className="flex justify-between items-center mb-4">
-        <div className={fieldLabel}>販売中の物件をチェック。得点の変化を見逃さず、最適な一手をご提案します。</div>
+        <div className={fieldLabel}>販売中の物件をチェック。反響の変化を見逃さず、最適な一手をご提案します。</div>
         <Link href="/properties/new" className="py-[9px] px-4 bg-brand rounded-md text-white text-[13px] font-bold whitespace-nowrap">
           ＋ 新しい物件を登録
         </Link>
@@ -27,6 +29,9 @@ export default function MonitorPage() {
         ))}
       </div>
       <div className={`${card} p-5`}>
+        <div className="text-[11px] text-muted mb-2">
+          閲覧数・問合せ・見学は今月の件数（<ManualEntryNote />）
+        </div>
         <div className={`${tableHead} grid-cols-[2.4fr_1fr_1fr_1fr_1fr_1fr]`}>
           <div>物件</div>
           <div>販売期間</div>

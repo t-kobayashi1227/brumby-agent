@@ -14,7 +14,7 @@ export default function ResearchConditionsPage() {
             </div>
             <div className="flex justify-between border-b border-divider pb-2">
               <span className="text-muted">物件種別</span>
-              <span>新築一戸建て</span>
+              <span>新築戸建</span>
             </div>
             <div className="flex justify-between border-b border-divider pb-2">
               <span className="text-muted">価格</span>
@@ -42,7 +42,7 @@ export default function ResearchConditionsPage() {
           <div className="text-sm font-bold text-ink mb-3">調査サイトへ移動</div>
           <div className="flex-1 flex flex-col justify-center">
             <button className="w-full p-[11px] bg-[#00a651] rounded-md text-white font-bold text-[13px] mb-2.5 cursor-pointer">SUUMOで検索</button>
-            <button className="w-full p-[11px] bg-[#e6303e] rounded-md text-white font-bold text-[13px] cursor-pointer">at homeで検索</button>
+            <button className="w-full p-[11px] bg-[#e6303e] rounded-md text-white font-bold text-[13px] cursor-pointer">アットホームで検索</button>
           </div>
         </div>
       </div>

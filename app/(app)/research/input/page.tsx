@@ -1,10 +1,13 @@
 import Link from "next/link";
+import { listingCounts, surveyDate } from "../../../_lib/data";
 import { card, fieldLabel, input, checkLabel, btnPrimary, btnSecondary } from "../../../_lib/ui";
 
-const searchResults = [
-  { label: "SUUMOの検索結果", count: "18", accent: "text-[#00a651]", border: "border-[#00a651]", bg: "bg-[#eefaf3]" },
-  { label: "アットホームの検索結果", count: "14", accent: "text-[#e6303e]", border: "border-[#e6303e]", bg: "bg-[#fdf0f1]" },
+const siteStyles = [
+  { accent: "text-[#00a651]", border: "border-[#00a651]", bg: "bg-[#eefaf3]" },
+  { accent: "text-[#e6303e]", border: "border-[#e6303e]", bg: "bg-[#fdf0f1]" },
 ];
+
+const searchResults = listingCounts.map((l, i) => ({ label: `${l.site}の検索結果`, count: String(l.count), ...siteStyles[i] }));
 
 const priceFields = [
   { label: "最低価格", value: "3,280", unit: "万円" },
@@ -28,7 +31,7 @@ export default function ResearchInputPage() {
       <div className="grid grid-cols-3 gap-3.5 mb-5">
         <div>
           <label className={fieldLabel}>調査日</label>
-          <input type="date" defaultValue="2025-09-16" className={input} />
+          <input type="date" defaultValue={surveyDate.replaceAll("/", "-")} className={input} />
         </div>
         {searchResults.map((r) => (
           <div key={r.label} className={`border-2 ${r.border} ${r.bg} rounded-lg px-3 py-2.5 text-center`}>

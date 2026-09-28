@@ -9,7 +9,7 @@ export default function LoginPage() {
           <div className="flex items-center justify-center gap-2.5 mb-7">
             <Image src="/brumby_ロゴのみ.png" alt="BRUMBY" width={132} height={88} className="h-28 w-auto" priority />
           </div>
-          <div className="text-[22px] font-bold text-ink mb-6 text-center">BRUMBY AI <br />物件販売支援システム</div>
+          <div className="text-[22px] font-bold text-ink mb-6 text-center">BRUMBY AI物件販売戦略</div>
 
           <label className="block text-[13px] text-body mb-1.5">メールアドレス</label>
           <input type="email" defaultValue="info@sample.co.jp" className="w-full py-[11px] px-3.5 border border-field rounded-lg text-sm mb-4 outline-none" />

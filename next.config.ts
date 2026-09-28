@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Hide the on-screen dev indicator so it doesn't show up during client demos.
+  devIndicators: false,
 };
 
 export default nextConfig;

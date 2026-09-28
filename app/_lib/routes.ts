@@ -7,15 +7,15 @@ export interface PageDef {
 
 /** Every page in the prototype, in the order shown in the demo screen-jump menu. */
 export const pages: PageDef[] = [
-  { href: "/", title: "1. ログイン・ホーム" },
-  { href: "/dashboard", title: "2. ダッシュボード" },
+  { href: "/", title: "1. ログイン" },
+  { href: "/dashboard", title: "2. ホーム" },
   { href: "/properties/new", title: "3. 新規物件登録" },
   { href: "/research", title: "4. 競合物件リサーチ" },
   { href: "/research/input", title: "5. 競合物件リサーチ（入力）" },
   { href: "/research/detail", title: "6. 競合物件リサーチ（詳細入力）" },
   { href: "/research/result", title: "7. AI分析結果（競合診断）" },
   { href: "/strategy", title: "8. 販売戦略提案" },
-  { href: "/monitor", title: "9. ダッシュボード" },
+  { href: "/monitor", title: "9. 販売モニター" },
   { href: "/monitor/0", title: "10. 物件別モニター詳細" },
   { href: "/report", title: "11. レポート出力" },
   { href: "/plan", title: "12. プラン・オプション" },
@@ -32,11 +32,11 @@ export function findPage(pathname: string): PageDef | undefined {
 
 export const navItems: { label: string; href: string }[] = [
   { label: "ホーム", href: "/dashboard" },
-  { label: "物件一覧", href: "/dashboard" },
+  { label: "物件一覧", href: "/dashboard#properties" },
   { label: "新規物件登録", href: "/properties/new" },
   { label: "販売戦略", href: "/strategy" },
   { label: "競合物件リサーチ", href: "/research" },
-  { label: "ダッシュボード", href: "/monitor" },
+  { label: "販売モニター", href: "/monitor" },
   { label: "レポート", href: "/report" },
   { label: "お知らせ", href: "/notice" },
   { label: "プラン・オプション", href: "/plan" },
