@@ -5,7 +5,7 @@ import { insertRows, type IngestJob } from "../lib/runner";
 
 // 取引価格・成約価格（不動産情報ライブラリ XIT001）
 // npm run ingest -- reinfolib-transactions --pref 15 --from 2015Q1 [--to 2026Q2]
-// 四半期ごとに取得する。まだ公表されていない四半期は0件で返るので、そのまま進める
+// 四半期ごとに取得する。まだ公表されていない四半期は 404 が返るので、0件として進める
 
 const ENDPOINT = "https://www.reinfolib.mlit.go.jp/ex-api/external/XIT001";
 
@@ -55,7 +55,8 @@ export const reinfolibTransactions: IngestJob = {
   source: "reinfolib",
   dataset: "XIT001",
   table: "transactions",
-  attribution: "国土交通省 不動産情報ライブラリ（不動産価格情報）",
+  // 利用約款の出典記載例どおり。集計して表示するときは「をもとに作成」を画面側で添える（設計書 D12）
+  attribution: "出典：国土交通省 不動産情報ライブラリ（https://www.reinfolib.mlit.go.jp/）「不動産価格（取引価格・成約価格）情報」",
   options: ["pref", "from", "to"],
 
   describe(args) {
@@ -76,9 +77,9 @@ export const reinfolibTransactions: IngestJob = {
       const body = await fetchJson<{ status: string; data: Xit001Row[] }>(url, {
         headers: { "Ocp-Apim-Subscription-Key": key },
       });
-      const data = body.data ?? [];
-      if (data.length === 0) {
-        log(`${label(q)}：0件（未公表）`);
+      const data = body?.data ?? [];
+      if (!body || data.length === 0) {
+        log(`${label(q)}：0件（未公表または該当なし）`);
         continue;
       }
       await saveRaw(`${label(q)}.json`, JSON.stringify(body));
