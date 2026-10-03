@@ -6,7 +6,7 @@ import { requireEnv } from "./env";
 const BUCKET = "ingest-raw";
 
 /** 保存したファイルの場所（storage://ingest-raw/...）を返す */
-export async function saveRaw(path: string, body: string, contentType = "application/json"): Promise<string> {
+export async function saveRaw(path: string, body: string | Uint8Array<ArrayBuffer>, contentType = "application/json"): Promise<string> {
   const url = requireEnv("SUPABASE_URL");
   const key = requireEnv("SUPABASE_SECRET_KEY");
 

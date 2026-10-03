@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "db:check": "tsx --env-file=.env.local scripts/db-check.ts",
-    "ingest": "tsx --env-file=.env.local scripts/ingest/index.ts"
+    "ingest": "tsx --env-file=.env.local scripts/ingest/index.ts",
+    "build:district-areas": "tsx --env-file=.env.local scripts/build-district-areas.ts"
   },
   "dependencies": {
     "next": "16.3.6",
@@ -21,8 +22,11 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/shapefile": "^0.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
+    "fflate": "^0.8.3",
+    "shapefile": "^0.6.6",
     "supabase": "^2.119.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",

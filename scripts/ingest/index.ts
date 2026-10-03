@@ -2,11 +2,15 @@
 // 例：npm run ingest -- reinfolib-transactions --pref 15 --from 2015Q1
 import { parseArgs } from "node:util";
 import { getSql } from "../../lib/db";
+import { estatBoundaries } from "./jobs/estat-boundaries";
+import { reinfolibLandPrices } from "./jobs/reinfolib-land-prices";
 import { reinfolibTransactions } from "./jobs/reinfolib-transactions";
 import { runIngest, type IngestJob } from "./lib/runner";
 
 const jobs: Record<string, IngestJob> = {
   "reinfolib-transactions": reinfolibTransactions,
+  "reinfolib-land-prices": reinfolibLandPrices,
+  "estat-boundaries": estatBoundaries,
 };
 
 async function main() {

@@ -13,7 +13,7 @@ export interface IngestContext {
   versionId: number;
   args: IngestArgs;
   /** 生データを Storage の「source/dataset/版のID/name」に保存する */
-  saveRaw: (name: string, body: string) => Promise<string>;
+  saveRaw: (name: string, body: string | Uint8Array<ArrayBuffer>, contentType?: string) => Promise<string>;
   log: (message: string) => void;
 }
 
@@ -49,7 +49,7 @@ export async function runIngest(job: IngestJob, args: IngestArgs, command: strin
       sql,
       versionId,
       args,
-      saveRaw: (name, body) => saveRaw(`${rawPrefix}/${versionId}/${name}`, body),
+      saveRaw: (name, body, contentType) => saveRaw(`${rawPrefix}/${versionId}/${name}`, body, contentType),
       log,
     });
 
