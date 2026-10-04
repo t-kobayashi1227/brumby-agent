@@ -9,7 +9,8 @@
     "lint": "eslint",
     "db:check": "tsx --env-file=.env.local scripts/db-check.ts",
     "ingest": "tsx --env-file=.env.local scripts/ingest/index.ts",
-    "build:district-areas": "tsx --env-file=.env.local scripts/build-district-areas.ts"
+    "build:district-areas": "tsx --env-file=.env.local scripts/build-district-areas.ts",
+    "fetch-surroundings": "tsx --env-file=.env.local scripts/fetch-surroundings.ts"
   },
   "dependencies": {
     "next": "16.3.6",

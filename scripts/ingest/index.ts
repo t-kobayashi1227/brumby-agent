@@ -3,6 +3,7 @@
 import { parseArgs } from "node:util";
 import { getSql } from "../../lib/db";
 import { estatBoundaries } from "./jobs/estat-boundaries";
+import { estatCensus } from "./jobs/estat-census";
 import { reinfolibLandPrices } from "./jobs/reinfolib-land-prices";
 import { reinfolibTransactions } from "./jobs/reinfolib-transactions";
 import { runIngest, type IngestJob } from "./lib/runner";
@@ -11,6 +12,7 @@ const jobs: Record<string, IngestJob> = {
   "reinfolib-transactions": reinfolibTransactions,
   "reinfolib-land-prices": reinfolibLandPrices,
   "estat-boundaries": estatBoundaries,
+  "estat-census": estatCensus,
 };
 
 async function main() {

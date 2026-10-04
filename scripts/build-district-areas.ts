@@ -5,6 +5,8 @@
 // 地区コードは国勢調査の KEY_CODE と別の体系なので使わず、同じ市区町村の中で名前で結びつける
 // 当てはめる順番：district_manual（手で直したもの）→ exact（ならした名前が一致）→ prefix（町丁目の名前が地区名で始まる）
 // prefix は、manual・exact でほかの地区に取られた町丁目を使わない（「横越」が「横越中央一丁目」を取らないように）
+// exact は「大字」「字」を外して比べるが、外さずに一致するほかの地区がある町丁目は、その地区に渡す
+// （地区「大字茨目」→ 町丁目「大字茨目」、地区「茨目」→ 町丁目「茨目一〜三丁目」）
 import { parseArgs } from "node:util";
 import { getSql } from "../lib/db";
 import { insertRows } from "./ingest/lib/runner";
@@ -12,12 +14,12 @@ import { insertRows } from "./ingest/lib/runner";
 // 相場に使う種類（設計書 D11）。一致率はこの件数で数える
 const HOUSING_TYPES = ["宅地(土地と建物)", "宅地(土地)"];
 
-/** 地区名と町丁目の名前を、比べられる形にならす */
-export function normalizeName(name: string): string {
-  return name
+/** 地区名と町丁目の名前を、比べられる形にならす。strict のときは先頭の「大字」「字」を外さない */
+export function normalizeName(name: string, strict = false): string {
+  const base = name
     .normalize("NFKC")
-    .replace(/\(.*?\)/g, "")                       // 「栄町(さかえちょう)」→「栄町」（NFKCで全角かっこは半角になる）
-    .replace(/^(大字|字)/, "")
+    .replace(/\(.*?\)/g, "");                      // 「栄町(さかえちょう)」→「栄町」（NFKCで全角かっこは半角になる）
+  return (strict ? base : base.replace(/^(大字|字)/, ""))
     .replace(/[一二三四五六七八九十〇0-9]+丁目$/, "")
     .replace(/[ヶヵ]/g, "ケ")
     .replace(/之/g, "ノ")
@@ -65,10 +67,10 @@ async function main() {
   `;
 
   // 市区町村ごとに、町丁目を「ならした名前」と一緒に持つ
-  const areasByCity = new Map<string, { key_code: string; name: string }[]>();
+  const areasByCity = new Map<string, { key_code: string; name: string; strict: string }[]>();
   for (const a of areas) {
     const list = areasByCity.get(a.city_code) ?? [];
-    list.push({ key_code: a.key_code, name: normalizeName(a.name) });
+    list.push({ key_code: a.key_code, name: normalizeName(a.name), strict: normalizeName(a.name, true) });
     areasByCity.set(a.city_code, list);
   }
   const knownKeys = new Set(areas.map((a) => a.key_code));
@@ -94,13 +96,29 @@ async function main() {
   const assigned = new Map<string, { match: Match; keys: string[] }>();
   const claimed = new Set<string>(); // 1周目（manual・exact）で取られた町丁目。KEY_CODEは市区町村コードを含むので県内で一意
 
+  // 「大字」「字」を外さずに名前が一致する地区（町丁目ごと）。exact で、ほかの地区がこれに当たる町丁目は取らない
+  const strictOwners = new Map<string, Set<string>>();
+  for (const d of districts) {
+    const strict = normalizeName(d.district_name, true);
+    for (const a of areasByCity.get(d.municipality_code) ?? []) {
+      if (!strict || a.strict !== strict) continue;
+      strictOwners.set(a.key_code, (strictOwners.get(a.key_code) ?? new Set<string>()).add(districtKey(d)));
+    }
+  }
+
   // 1周目：manual → exact
+  // ほかの地区に渡したために exact で何も取れなかった地区は、3周目で同じ町丁目を分け合う（「大字蓮台寺」と「蓮台寺」）
+  const sharedExact = new Map<string, string[]>();
   for (const d of districts) {
     const manualKeys = manualByDistrict.get(districtKey(d)) ?? [];
     const name = normalizeName(d.district_name);
-    const exactKeys = name
+    const looseKeys = name
       ? (areasByCity.get(d.municipality_code) ?? []).filter((a) => a.name === name).map((a) => a.key_code)
       : [];
+    const exactKeys = looseKeys.filter(
+      (k) => !strictOwners.has(k) || strictOwners.get(k)!.has(districtKey(d)),
+    );
+    if (exactKeys.length === 0 && looseKeys.length > 0) sharedExact.set(districtKey(d), looseKeys);
     const hit: { match: Match; keys: string[] } | null =
       manualKeys.length > 0 ? { match: "manual", keys: manualKeys }
       : exactKeys.length > 0 ? { match: "exact", keys: exactKeys }
@@ -135,6 +153,11 @@ async function main() {
         assigned.set(districtKey(d), entry);
       }
     }
+  }
+
+  // 3周目：exact でも prefix でも取れなかった地区は、ほかの地区に渡した町丁目を分け合う
+  for (const [key, keys] of sharedExact) {
+    if (!assigned.has(key)) assigned.set(key, { match: "exact", keys });
   }
 
   for (const d of districts) {
