@@ -229,6 +229,8 @@ export const marketAnalyzer: Analyzer = {
     const basis = {
       n: result.n,
       period,
+      from_quarter: from,
+      to_quarter: latest,
       trade_type: type,
       q1_man_yen: man(result.q1),
       q3_man_yen: man(result.q3),

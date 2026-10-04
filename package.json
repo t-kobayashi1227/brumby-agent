@@ -12,13 +12,16 @@
     "build:district-areas": "tsx --env-file=.env.local scripts/build-district-areas.ts",
     "fetch-surroundings": "tsx --env-file=.env.local scripts/fetch-surroundings.ts",
     "analyze": "tsx --env-file=.env.local scripts/analyze.ts",
-    "seed-rules": "tsx --env-file=.env.local scripts/seed-rules.ts"
+    "seed-rules": "tsx --env-file=.env.local scripts/seed-rules.ts",
+    "generate-narrative": "tsx --env-file=.env.local scripts/generate-narrative.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
     "next": "16.3.6",
     "postgres": "^3.4.9",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

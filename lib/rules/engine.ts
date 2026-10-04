@@ -99,11 +99,8 @@ export function allocate(total: number, weights: Record<string, number>, fixed: 
   return amounts;
 }
 
-export function runRules(rules: Rule[], facts: FactDraft[], property: PropertyRow): FactDraft[] {
-  const active = rules.filter((r) => r.enabled);
-  const byKey = new Map(facts.filter((f) => f.status === "ok" && typeof f.value === "number").map((f) => [f.key, f]));
-  const decided = new Map<string, number>();
-  const lookup: Lookup = (key) => {
+function buildLookup(property: PropertyRow, byKey: Map<string, FactDraft>, decided: Map<string, number>): Lookup {
+  return (key) => {
     if (key.startsWith("property.")) {
       const v = (property as unknown as Record<string, unknown>)[key.slice("property.".length)];
       return typeof v === "number" ? { value: v, comparison: null } : null;
@@ -115,6 +112,77 @@ export function runRules(rules: Rule[], facts: FactDraft[], property: PropertyRo
     const f = byKey.get(key);
     return f ? { value: Number(f.value), comparison: f.comparison ?? null } : null;
   };
+}
+
+export interface MediaAllocation {
+  id: string;
+  amount: number;
+  weight: number;
+  fixed: number | null;
+  min: number | null;
+  rules: Applied[];
+}
+
+/**
+ * 媒体の重み → 固定額・最低額 → 配分（設計書 6.1の3）。総予算を渡して計算する部分だけを取り出したもの
+ * ルール表の画面の「予算別シミュレーション」のように、総予算だけを変えて配分を見るときにも使う
+ */
+export function allocateMedia(active: Rule[], fired: (r: Rule) => boolean, total: number): MediaAllocation[] {
+  const applied = (r: Rule): Applied => ({ id: r.id, version: r.version, note: r.note });
+
+  const weights: Record<string, number> = Object.fromEntries(MEDIA.map((m) => [m.id, 0]));
+  const fixed: Record<string, number> = {};
+  const mins: Record<string, number> = {};
+  const mediaRules = new Map(MEDIA.map((m) => [m.id, [] as Applied[]]));
+  const weightRules = active.filter((r) => r.kind === "media_weight");
+  for (const r of weightRules.filter((r) => (r.effect as { weight?: number }).weight !== undefined)) {
+    const e = r.effect as { media: string; weight: number };
+    if (e.media in weights && fired(r)) {
+      weights[e.media] = e.weight;
+      mediaRules.get(e.media)!.push(applied(r));
+    }
+  }
+  for (const r of weightRules.filter((r) => (r.effect as { multiply?: number }).multiply !== undefined)) {
+    const e = r.effect as { media: string; multiply: number };
+    if (e.media in weights && fired(r)) {
+      weights[e.media] *= e.multiply;
+      mediaRules.get(e.media)!.push(applied(r));
+    }
+  }
+  for (const r of active.filter((r) => r.kind === "min_spend")) {
+    const e = r.effect as { media: string; fixed_man_yen?: number; min_man_yen?: number };
+    if (!(e.media in weights) || !fired(r)) continue;
+    if (e.fixed_man_yen !== undefined) fixed[e.media] = e.fixed_man_yen;
+    if (e.min_man_yen !== undefined) mins[e.media] = e.min_man_yen;
+    mediaRules.get(e.media)!.push(applied(r));
+  }
+
+  const amounts = allocate(total, weights, fixed, mins);
+  return MEDIA.map((m) => ({
+    id: m.id,
+    amount: amounts[m.id] ?? 0,
+    weight: Math.round(weights[m.id] * 100) / 100,
+    fixed: fixed[m.id] ?? null,
+    min: mins[m.id] ?? null,
+    rules: mediaRules.get(m.id)!,
+  }));
+}
+
+/** ルール表の画面の「予算別シミュレーション」用：総予算だけを変えて、配分を計算し直す（事実カードは変えない） */
+export function simulateMediaAllocation(rules: Rule[], facts: FactDraft[], property: PropertyRow, totalManYen: number): MediaAllocation[] {
+  const active = rules.filter((r) => r.enabled);
+  const byKey = new Map(facts.filter((f) => f.status === "ok" && typeof f.value === "number").map((f) => [f.key, f]));
+  const decided = new Map<string, number>([["decision.total_budget", totalManYen]]);
+  const lookup = buildLookup(property, byKey, decided);
+  const fired = (r: Rule) => evaluate(r.condition, lookup);
+  return allocateMedia(active, fired, totalManYen);
+}
+
+export function runRules(rules: Rule[], facts: FactDraft[], property: PropertyRow): FactDraft[] {
+  const active = rules.filter((r) => r.enabled);
+  const byKey = new Map(facts.filter((f) => f.status === "ok" && typeof f.value === "number").map((f) => [f.key, f]));
+  const decided = new Map<string, number>();
+  const lookup = buildLookup(property, byKey, decided);
   /** 条件が参照した事実カードの版（判断カードの出典に残す） */
   const usedVersions = new Set<number>();
   const fired = (r: Rule) => {
@@ -143,37 +211,23 @@ export function runRules(rules: Rule[], facts: FactDraft[], property: PropertyRo
   const total = budgetRules.length > 0 ? Math.max(...budgetRules.map((r) => (r.effect as { total_man_yen: number }).total_man_yen)) : null;
   if (total !== null) decided.set("decision.total_budget", total);
 
-  // 3. 媒体の重み → 固定額・最低額 → 配分
-  const weights: Record<string, number> = Object.fromEntries(MEDIA.map((m) => [m.id, 0]));
-  const fixed: Record<string, number> = {};
-  const mins: Record<string, number> = {};
-  const mediaRules = new Map(MEDIA.map((m) => [m.id, [] as Applied[]]));
-  const weightRules = active.filter((r) => r.kind === "media_weight");
-  for (const r of weightRules.filter((r) => (r.effect as { weight?: number }).weight !== undefined)) {
-    const e = r.effect as { media: string; weight: number };
-    if (e.media in weights && fired(r)) {
-      weights[e.media] = e.weight;
-      mediaRules.get(e.media)!.push(applied(r));
-    }
-  }
-  for (const r of weightRules.filter((r) => (r.effect as { multiply?: number }).multiply !== undefined)) {
-    const e = r.effect as { media: string; multiply: number };
-    if (e.media in weights && fired(r)) {
-      weights[e.media] *= e.multiply;
-      mediaRules.get(e.media)!.push(applied(r));
-    }
-  }
-  for (const r of active.filter((r) => r.kind === "min_spend")) {
-    const e = r.effect as { media: string; fixed_man_yen?: number; min_man_yen?: number };
-    if (!(e.media in weights) || !fired(r)) continue;
-    if (e.fixed_man_yen !== undefined) fixed[e.media] = e.fixed_man_yen;
-    if (e.min_man_yen !== undefined) mins[e.media] = e.min_man_yen;
-    mediaRules.get(e.media)!.push(applied(r));
-  }
-
-  const versionIds = [...usedVersions];
   const attribution = "ルール表（仮のルール。BRUMBY様との打ち合わせで見直す）";
   const out: FactDraft[] = [];
+
+  if (total === null) {
+    const versionIds = [...usedVersions];
+    out.push({
+      key: "decision.target_rank", kind: "decision", value: ranking[0].score,
+      valueText: ranking.map((t) => `${t.rank}位 ${t.label}（${t.score}点）`).join(" ／ "),
+      unit: "score", scope: { type: "rules" }, basis: { ranking }, status: "ok", datasetVersionIds: versionIds, attribution,
+    });
+    out.push({ key: "decision.total_budget", kind: "decision", status: "not_available", scope: { type: "rules" }, basis: { reason: "総予算を決めるルールに当てはまりませんでした（物件の価格が入っていない可能性）" }, datasetVersionIds: versionIds, attribution });
+    return out;
+  }
+
+  const media = allocateMedia(active, fired, total);
+  const versionIds = [...usedVersions];
+
   out.push({
     key: "decision.target_rank",
     kind: "decision",
@@ -186,11 +240,6 @@ export function runRules(rules: Rule[], facts: FactDraft[], property: PropertyRo
     datasetVersionIds: versionIds,
     attribution,
   });
-
-  if (total === null) {
-    out.push({ key: "decision.total_budget", kind: "decision", status: "not_available", scope: { type: "rules" }, basis: { reason: "総予算を決めるルールに当てはまりませんでした（物件の価格が入っていない可能性）" }, datasetVersionIds: versionIds, attribution });
-    return out;
-  }
   out.push({
     key: "decision.total_budget",
     kind: "decision",
@@ -204,25 +253,24 @@ export function runRules(rules: Rule[], facts: FactDraft[], property: PropertyRo
     attribution,
   });
 
-  const amounts = allocate(total, weights, fixed, mins);
-  for (const m of MEDIA) {
-    const amount = amounts[m.id] ?? 0;
+  for (const m of media) {
+    const def = MEDIA.find((d) => d.id === m.id)!;
     out.push({
       key: `decision.media.${m.id}`,
       kind: "decision",
-      value: amount,
-      valueText: `${m.label} ${amount}万円（${Math.round((amount / total) * 100)}%）`,
+      value: m.amount,
+      valueText: `${def.label} ${m.amount}万円（${Math.round((m.amount / total) * 100)}%）`,
       unit: "万円",
       comparison: total,
       scope: { type: "rules" },
       basis: {
-        media: m.label,
-        role: m.role,
-        share: Math.round((amount / total) * 1000) / 1000,
-        weight: Math.round(weights[m.id] * 100) / 100,
-        fixed_man_yen: fixed[m.id] ?? null,
-        min_man_yen: mins[m.id] ?? null,
-        rules: mediaRules.get(m.id),
+        media: def.label,
+        role: def.role,
+        share: Math.round((m.amount / total) * 1000) / 1000,
+        weight: m.weight,
+        fixed_man_yen: m.fixed,
+        min_man_yen: m.min,
+        rules: m.rules,
       },
       status: "ok",
       datasetVersionIds: versionIds,
