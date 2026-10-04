@@ -10,7 +10,9 @@
     "db:check": "tsx --env-file=.env.local scripts/db-check.ts",
     "ingest": "tsx --env-file=.env.local scripts/ingest/index.ts",
     "build:district-areas": "tsx --env-file=.env.local scripts/build-district-areas.ts",
-    "fetch-surroundings": "tsx --env-file=.env.local scripts/fetch-surroundings.ts"
+    "fetch-surroundings": "tsx --env-file=.env.local scripts/fetch-surroundings.ts",
+    "analyze": "tsx --env-file=.env.local scripts/analyze.ts",
+    "seed-rules": "tsx --env-file=.env.local scripts/seed-rules.ts"
   },
   "dependencies": {
     "next": "16.3.6",

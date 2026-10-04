@@ -20,6 +20,7 @@ export const pages: PageDef[] = [
   { href: "/report", title: "11. レポート出力" },
   { href: "/plan", title: "12. プラン・オプション" },
   { href: "/notice", title: "お知らせ" },
+  { href: "/rules", title: "ルール表（販売戦略の判断基準）" },
 ];
 
 /** Resolves the page definition for a pathname (dynamic `/monitor/[id]` maps to the detail page). */
@@ -35,6 +36,7 @@ export const navItems: { label: string; href: string }[] = [
   { label: "物件一覧", href: "/dashboard#properties" },
   { label: "新規物件登録", href: "/properties/new" },
   { label: "販売戦略", href: "/strategy" },
+  { label: "ルール表", href: "/rules" },
   { label: "競合物件リサーチ", href: "/research" },
   { label: "販売モニター", href: "/monitor" },
   { label: "レポート", href: "/report" },
