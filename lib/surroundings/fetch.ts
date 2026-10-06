@@ -1,8 +1,8 @@
 import type { Sql } from "../db";
 import { DEFAULT_RADIUS_M, LAYERS, type Layer } from "./layers";
 
-// 物件の周りの公開データを取って保存する（設計書 4.2「初回に取得して保存」）
-// 物件の登録のとき（サーバーの処理）と scripts/ の両方から呼ぶので、Node.js専用の機能は使わない
+// 物件の周りの公開データを取って保存する（設計書 4.2「物件の登録時に、周りの地物だけを取得して保存」）
+// 物件の画面（登録・位置の保存の後に自動で）と scripts/ の両方から呼ぶ
 
 const ENDPOINT = "https://www.reinfolib.mlit.go.jp/ex-api/external";
 const ATTRIBUTION = "出典：国土交通省 不動産情報ライブラリ（https://www.reinfolib.mlit.go.jp/）";
@@ -74,81 +74,94 @@ async function activeVersion(sql: Sql, layer: Layer): Promise<number> {
   return Number(created.id);
 }
 
+/** 物件の位置。なければ例外 */
+async function propertyPoint(sql: Sql, propertyId: number) {
+  const [property] = await sql<{ lon: number | null; lat: number | null }[]>`
+    select extensions.st_x(geom) as lon, extensions.st_y(geom) as lat from properties where id = ${propertyId}
+  `;
+  if (!property) throw new Error(`物件 ${propertyId} がありません`);
+  if (property.lon === null || property.lat === null) throw new Error(`物件 ${propertyId} に緯度経度がありません`);
+  return { lon: Number(property.lon), lat: Number(property.lat) };
+}
+
+/**
+ * 1種類（1つのAPI）だけ取って保存し、property_fetches に記録する
+ * 画面からは、この関数を1種類ずつ別の呼び出しで呼ぶ（1回の呼び出しを短くするため。設計書 D34 と同じ考え方）
+ */
+export async function fetchLayer(sql: Sql, propertyId: number, apiKey: string, layer: Layer, radiusM = DEFAULT_RADIUS_M): Promise<FetchResult> {
+  const { lon, lat } = await propertyPoint(sql, propertyId);
+  const point = `SRID=4326;POINT(${lon} ${lat})`;
+  const keepM = layer.mode === "radius" ? radiusM : layer.keepM ?? 0;
+  // point でも、保存する範囲がタイルの境目をまたぐことがあるので、範囲を囲むタイルをすべて取る
+  const tiles = tilesAround(lon, lat, Math.max(keepM, 1), layer.zoom);
+  const result: FetchResult = { apiId: layer.apiId, name: layer.name, tiles: tiles.length, featuresInTiles: 0, featuresKept: 0, status: "ok" };
+  let versionId: number | null = null;
+
+  try {
+    versionId = await activeVersion(sql, layer);
+    const features = new Map<string, Feature>();
+    for (const { x, y } of tiles) {
+      for (const f of await fetchTile(apiKey, layer, x, y)) {
+        const id = f.properties._id ?? JSON.stringify(f.properties);
+        features.set(id, f);
+      }
+      await sleep(200);
+    }
+    result.featuresInTiles = features.size;
+
+    // 物件から keepM 以内の地物だけを保存する（keepM = 0 は物件を含むもの）
+    const rows = [...features].map(([id, f]) => ({ id, geometry: f.geometry, properties: f.properties }));
+    for (let i = 0; i < rows.length; i += 500) {
+      await sql`
+        insert into geo_features (dataset_version_id, api_id, feature_id, geom, properties)
+        select ${versionId}, ${layer.apiId}, f->>'id', g.geom, f->'properties'
+        from jsonb_array_elements(${sql.json(rows.slice(i, i + 500) as never)}) f
+        cross join lateral (
+          select extensions.st_setsrid(extensions.st_geomfromgeojson(f->>'geometry'), 4326) as geom
+        ) g
+        where extensions.st_dwithin(g.geom::extensions.geography, ${point}::extensions.geography, ${keepM})
+        on conflict do nothing
+      `;
+    }
+    const [kept] = await sql<{ n: number }[]>`
+      select count(*)::int as n from geo_features
+      where dataset_version_id = ${versionId} and api_id = ${layer.apiId}
+        and extensions.st_dwithin(geom::extensions.geography, ${point}::extensions.geography, ${keepM})
+    `;
+    result.featuresKept = kept.n;
+    result.status = kept.n > 0 ? "ok" : "empty";
+  } catch (error) {
+    result.status = "failed";
+    result.error = error instanceof Error ? error.message : String(error);
+  }
+
+  await sql`
+    insert into property_fetches (property_id, api_id, dataset_version_id, mode, keep_m, zoom, tiles,
+                                  features_in_tiles, features_kept, status, error, fetched_at)
+    values (${propertyId}, ${layer.apiId}, ${versionId}, ${layer.mode}, ${keepM}, ${layer.zoom}, ${result.tiles},
+            ${result.featuresInTiles}, ${result.featuresKept}, ${result.status}, ${result.error ?? null}, now())
+    on conflict (property_id, api_id) do update set
+      dataset_version_id = excluded.dataset_version_id, mode = excluded.mode, keep_m = excluded.keep_m,
+      zoom = excluded.zoom, tiles = excluded.tiles, features_in_tiles = excluded.features_in_tiles,
+      features_kept = excluded.features_kept, status = excluded.status, error = excluded.error,
+      fetched_at = excluded.fetched_at
+  `;
+  return result;
+}
+
+/** すべての種類を順に取る（npm run fetch-surroundings 用） */
 export async function fetchSurroundings(
   sql: Sql,
   propertyId: number,
   apiKey: string,
   options: { radiusM?: number; apiIds?: string[]; log?: (message: string) => void } = {},
 ): Promise<FetchResult[]> {
-  const radiusM = options.radiusM ?? DEFAULT_RADIUS_M;
   const log = options.log ?? (() => {});
-  const [property] = await sql<{ lon: number | null; lat: number | null }[]>`
-    select extensions.st_x(geom) as lon, extensions.st_y(geom) as lat from properties where id = ${propertyId}
-  `;
-  if (!property) throw new Error(`物件 ${propertyId} がありません`);
-  if (property.lon === null || property.lat === null) throw new Error(`物件 ${propertyId} に緯度経度がありません`);
-  const { lon, lat } = property as { lon: number; lat: number };
-  const point = `SRID=4326;POINT(${lon} ${lat})`;
-
+  await propertyPoint(sql, propertyId);
   const layers = options.apiIds ? LAYERS.filter((l) => options.apiIds!.includes(l.apiId)) : LAYERS;
   const results: FetchResult[] = [];
-
   for (const layer of layers) {
-    const keepM = layer.mode === "radius" ? radiusM : layer.keepM ?? 0;
-    // point でも、保存する範囲がタイルの境目をまたぐことがあるので、範囲を囲むタイルをすべて取る
-    const tiles = tilesAround(lon, lat, Math.max(keepM, 1), layer.zoom);
-    const result: FetchResult = { apiId: layer.apiId, name: layer.name, tiles: tiles.length, featuresInTiles: 0, featuresKept: 0, status: "ok" };
-    let versionId: number | null = null;
-
-    try {
-      versionId = await activeVersion(sql, layer);
-      const features = new Map<string, Feature>();
-      for (const { x, y } of tiles) {
-        for (const f of await fetchTile(apiKey, layer, x, y)) {
-          const id = f.properties._id ?? JSON.stringify(f.properties);
-          features.set(id, f);
-        }
-        await sleep(200);
-      }
-      result.featuresInTiles = features.size;
-
-      // 物件から keepM 以内の地物だけを保存する（keepM = 0 は物件を含むもの）
-      const rows = [...features].map(([id, f]) => ({ id, geometry: f.geometry, properties: f.properties }));
-      for (let i = 0; i < rows.length; i += 500) {
-        await sql`
-          insert into geo_features (dataset_version_id, api_id, feature_id, geom, properties)
-          select ${versionId}, ${layer.apiId}, f->>'id', g.geom, f->'properties'
-          from jsonb_array_elements(${sql.json(rows.slice(i, i + 500) as never)}) f
-          cross join lateral (
-            select extensions.st_setsrid(extensions.st_geomfromgeojson(f->>'geometry'), 4326) as geom
-          ) g
-          where extensions.st_dwithin(g.geom::extensions.geography, ${point}::extensions.geography, ${keepM})
-          on conflict do nothing
-        `;
-      }
-      const [kept] = await sql<{ n: number }[]>`
-        select count(*)::int as n from geo_features
-        where dataset_version_id = ${versionId} and api_id = ${layer.apiId}
-          and extensions.st_dwithin(geom::extensions.geography, ${point}::extensions.geography, ${keepM})
-      `;
-      result.featuresKept = kept.n;
-      result.status = kept.n > 0 ? "ok" : "empty";
-    } catch (error) {
-      result.status = "failed";
-      result.error = error instanceof Error ? error.message : String(error);
-    }
-
-    await sql`
-      insert into property_fetches (property_id, api_id, dataset_version_id, mode, keep_m, zoom, tiles,
-                                    features_in_tiles, features_kept, status, error, fetched_at)
-      values (${propertyId}, ${layer.apiId}, ${versionId}, ${layer.mode}, ${keepM}, ${layer.zoom}, ${result.tiles},
-              ${result.featuresInTiles}, ${result.featuresKept}, ${result.status}, ${result.error ?? null}, now())
-      on conflict (property_id, api_id) do update set
-        dataset_version_id = excluded.dataset_version_id, mode = excluded.mode, keep_m = excluded.keep_m,
-        zoom = excluded.zoom, tiles = excluded.tiles, features_in_tiles = excluded.features_in_tiles,
-        features_kept = excluded.features_kept, status = excluded.status, error = excluded.error,
-        fetched_at = excluded.fetched_at
-    `;
+    const result = await fetchLayer(sql, propertyId, apiKey, layer, options.radiusM);
     log(`${layer.apiId} ${layer.name}：タイル${result.tiles}枚、地物${result.featuresInTiles}件 → 保存${result.featuresKept}件（${result.status}${result.error ? `：${result.error}` : ""}）`);
     results.push(result);
   }

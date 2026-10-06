@@ -4,9 +4,12 @@ import { getSql } from "../../../../lib/db";
 import { btnPrimary, card } from "../../../_lib/ui";
 import LocationMap from "../LocationMap";
 import PropertyForm, { type PropertyValues } from "../PropertyForm";
+import SurroundingsPanel, { type FetchRow } from "../SurroundingsPanel";
 
 // 物件の画面：登録した内容の変更と、位置（地図のピン）の確認（設計書 7章、D15）
 export const dynamic = "force-dynamic";
+// 周辺の情報は1種類ずつ取る（1回の呼び出しは数秒）。念のための上限（秒）
+export const maxDuration = 60;
 
 interface Row extends Omit<PropertyValues, "land_sqm" | "building_sqm" | "sales_deadline"> {
   id: number;
@@ -37,6 +40,15 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
   `;
   if (!row) notFound();
 
+  const fetches = await getSql()<{ api_id: string; status: FetchRow["status"]; features_kept: number; error: string | null; fetched_at: Date }[]>`
+    select api_id, status, features_kept, error, fetched_at from property_fetches where property_id = ${propertyId}
+  `;
+  const hasLocation = row.lon !== null && row.lat !== null;
+  const lastFetched = fetches.reduce<Date | null>((m, f) => (m === null || f.fetched_at > m ? f.fetched_at : m), null);
+  // 位置が、最後に周辺の情報を取ったときより新しければ（登録直後・ピンを置き直した後など）、自動で取りに行く
+  const autoStart = hasLocation && (lastFetched === null || (row.geocoded_at !== null && row.geocoded_at > lastFetched));
+  const initialFetches: FetchRow[] = fetches.map((f) => ({ apiId: f.api_id, status: f.status, featuresKept: f.features_kept, error: f.error, fetchedAt: formatDate(f.fetched_at) }));
+
   const values: PropertyValues = {
     ...row,
     id: Number(row.id),
@@ -52,7 +64,7 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
           <div className="text-base font-extrabold text-ink">
             物件{values.id}：{values.name}
           </div>
-          {created && <div className="text-xs text-[#157347] mt-1">登録しました。下の地図で位置を確かめてから、分析してください。</div>}
+          {created && <div className="text-xs text-[#157347] mt-1">登録しました。地図で位置を確かめてください。位置があれば、周辺の情報を自動で取りに行きます（取り終わったら分析へ）。</div>}
           {geocode === "failed" && <div className="text-xs text-[#b91c1c] mt-1">住所から位置を取れませんでした（見つからない、または住所検索につながらない）。地図をクリックして位置を指定してください。</div>}
         </div>
         <Link href={`/strategy?property=${values.id}`} className={btnPrimary}>
@@ -65,6 +77,13 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
         lat={row.lat === null ? null : Number(row.lat)}
         source={row.geocode_source}
         geocodedAt={row.geocoded_at ? formatDate(row.geocoded_at) : null}
+      />
+      <SurroundingsPanel
+        key={row.geocoded_at ? new Date(row.geocoded_at).toISOString() : "none"}
+        propertyId={values.id!}
+        hasLocation={hasLocation}
+        autoStart={autoStart}
+        initial={initialFetches}
       />
       <PropertyForm values={values} />
     </div>

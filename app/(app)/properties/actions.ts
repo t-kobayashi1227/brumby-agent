@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { getSql } from "../../../lib/db";
 import { GEOCODER, geocodeAddress } from "../../../lib/geocode";
 import { PROPERTY_TYPES } from "../../../lib/rules/describe";
+import { fetchLayer, type FetchResult } from "../../../lib/surroundings/fetch";
+import { LAYERS } from "../../../lib/surroundings/layers";
 
 // 物件の登録・変更（設計書 7章 /properties/new、D15）
 // 保存すると住所から緯度経度を取る。取れなかったとき・ずれていたときは、地図でピンを置き直す（setLocation）
@@ -134,4 +136,19 @@ export async function regeocode(propertyId: number): Promise<PropertyFormState> 
   const warning = await geocodeAndStore(propertyId, row.address);
   revalidatePath(`/properties/${propertyId}`);
   return warning ? { error: warning } : { ok: "住所から位置を取り直しました。地図のピンを確かめてください。" };
+}
+
+/**
+ * 物件の周りの公開データを1種類だけ取る（設計書 4.2）。画面はこれを種類ごとに順に呼び、進み具合を出す
+ * 1回の呼び出しは数秒（タイル数枚）なので、Vercel の実行時間の上限にかからない
+ */
+export async function fetchSurroundingLayer(propertyId: number, apiId: string): Promise<FetchResult> {
+  const layer = LAYERS.find((l) => l.apiId === apiId);
+  if (!Number.isInteger(propertyId) || propertyId <= 0 || !layer) throw new Error("物件または取るデータの指定が正しくありません");
+  const apiKey = process.env.REINFOLIB_API_KEY;
+  if (!apiKey) {
+    return { apiId, name: layer.name, tiles: 0, featuresInTiles: 0, featuresKept: 0, status: "failed", error: "REINFOLIB_API_KEY が設定されていません（.env.local・Vercel の環境変数）" };
+  }
+  const result = await fetchLayer(getSql(), propertyId, apiKey, layer);
+  return result;
 }

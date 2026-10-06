@@ -34,7 +34,7 @@ BRUMBY PoCのデータまわり（DB、公開データ、取り込み）の仕�
 | `BASIC_AUTH_USER` | Basic認証のユーザー名（省略時は `brumby`） |
 
 ### Vercel の環境変数（設計書 D5）
-- 上の表のうち、画面で使う `DATABASE_URL`・`ANTHROPIC_API_KEY`・`BASIC_AUTH_PASSWORD`（・`BASIC_AUTH_USER`）を設定する。取り込み用のキー（`REINFOLIB_API_KEY` など）と `SUPABASE_SECRET_KEY` は、画面で使うまで置かない
+- 上の表のうち、画面で使う `DATABASE_URL`・`ANTHROPIC_API_KEY`・`BASIC_AUTH_PASSWORD`（・`BASIC_AUTH_USER`）・`REINFOLIB_API_KEY`（物件の画面で周辺の情報を取る）を設定する。`ESTAT_APP_ID`・`SUPABASE_URL`・`SUPABASE_SECRET_KEY` は取り込みのコマンドだけで使うので置かない
 - `DATABASE_URL` は **Transaction pooler（ポート 6543）** の接続文字列にする。関数ごとに接続するため。`lib/db/` は `prepare: false` でつなぐ
 - 関数のリージョンは東京（`vercel.json` の `hnd1`）
 
@@ -240,7 +240,7 @@ BRUMBY PoCのデータまわり（DB、公開データ、取り込み）の仕�
 - API の説明：https://www.e-stat.go.jp/api/ （API仕様）
 
 ### 物件の周りのデータ（不動産情報ライブラリ XKT系、2026-10-04に仕組みを作成）
-- **物件が登録されたときに、その周りを取りに行く**（県全域を先に取らない）。処理は `lib/surroundings/fetch.ts`（物件の登録画面からも呼べるよう、Node.js専用の機能を使わない）。試すときは `npm run fetch-surroundings -- --property <番号>`
+- **物件が登録されたときに、その周りを取りに行く**（県全域を先に取らない）。処理は `lib/surroundings/fetch.ts`。物件の画面（`/properties/<番号>`）は、位置が新しくなったら（登録・ピンの保存・住所からの取り直し）自動で1種類ずつ取りに行き、表に進み具合を出す（2026-10-07）。ターミナルで試すときは `npm run fetch-surroundings -- --property <番号>`。Vercel にも `REINFOLIB_API_KEY` が必要
 - 設計書4.2の `tile_cache`（タイルを丸ごと保存）はやめて、**物件の近くの地物だけを `geo_features` に保存する**形にした。洪水浸水想定はタイル1枚で681〜2,800件・3〜11MBあり、丸ごと保存すると無料枠の容量が足りなくなるため（`tile_cache` はマイグレーションで削除）
 - APIごとに取り方を分けている（`lib/surroundings/layers.ts`）
 
