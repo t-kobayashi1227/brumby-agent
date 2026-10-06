@@ -489,7 +489,7 @@ order by f.seq;
 | `run_id` | bigint | 必須 | どの実行の文章か（1つの実行に1つ） | |
 | `model` | text | 必須 | 使ったAIのモデル | |
 | `prompt_version` | text | 必須 | 使った指示文（プロンプト）の版 | |
-| `content` | jsonb | 必須 | 文章。セクション → 段落 → 文 → 引用したカードの番号 | |
+| `content` | jsonb | 必須 | 文章。セクション（6つ）→ 段落 → 文（種別：`numeric`／`qualitative`／`proposal`）→ 引用したカードの番号。`prompt_version` が `v1` の文章は旧い4セクション | |
 | `validation` | jsonb | | 検証の結果（段落ごと）。文の種別・数字・比較語・禁止表現（設計書6.3） | |
 | `status` | text | 必須 | `ok`／`needs_review`（要確認）／`failed`（生成できなかった） | |
 | `attempts` | smallint | 必須 | 生成した回数（検証に通らないと1回だけ作り直す） | `1` |

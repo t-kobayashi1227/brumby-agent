@@ -3,20 +3,24 @@
 import { useState, useTransition } from "react";
 import UnderlineTabs from "../../_components/UnderlineTabs";
 import { SourceNote } from "../../_components/Notes";
-import { SECTION_TITLE, type SectionKey } from "../../../lib/ai/schema";
+import { SECTION_TITLE, SENTENCE_KIND_LABEL, type SentenceKind } from "../../../lib/ai/schema";
 import { MEDIA } from "../../../lib/rules/catalog";
 import { card, fieldLabel, tableHead, btnPrimary, btnSecondary, budgetButtonClass, emptyState } from "../../_lib/ui";
 import { simulateBudget } from "./actions";
 
 const MEDIA_COLOR: Record<string, string> = { sns: "#3b6fd6", posting: "#f2a93b", flyer: "#9b7bd1", lp: "#4caf7d" };
+/** タブごとに出すセクション（旧い文章の key も含める） */
+const OVERALL_SECTIONS: SectionKey[] = ["property_location", "target_persona", "appeal_channels", "action_plan", "uncertainty", "appeal_points", "competitor_diff"];
+const MEDIA_SECTIONS: SectionKey[] = ["budget_plan", "budget_rationale"];
 const strategyTabDefs = [{ key: "overall", label: "総合評価" }, { key: "media", label: "媒体戦略・予算" }];
 
-interface Sentence { text: string; cites: number[] }
+interface Sentence { kind?: SentenceKind; text: string; cites: number[] }
 interface Paragraph { key: string; sentences: Sentence[] }
+type SectionKey = keyof typeof SECTION_TITLE;
 interface Section { key: SectionKey; paragraphs: Paragraph[] }
 interface FactLite { seq: number; valueText: string | null; attribution: string | null }
 interface AppliedRule { id: string; version: number; note: string }
-interface TargetRankItem { rank: number; id: string; label: string; description: string; score: number; rules: AppliedRule[] }
+interface TargetRankItem { rank: number; id: string; label: string; description: string; score: number; max: number; confidence: "normal" | "low"; available: boolean; rules: AppliedRule[] }
 interface MediaRow { id: string; amount: number; rules: AppliedRule[] }
 
 export interface StrategyClientProps {
@@ -60,6 +64,7 @@ function AnswerSection({ section, facts }: { section: Section; facts: FactLite[]
       <div className="grid gap-2.5">
         {section.paragraphs.flatMap((p) => p.sentences).map((s, i) => (
           <div key={i} className={fieldLabel}>
+            {s.kind && <span className="mr-1.5 inline-block px-1.5 rounded bg-divider text-[10px] text-muted align-middle">{SENTENCE_KIND_LABEL[s.kind]}</span>}
             {s.text}
             <CiteBadges cites={s.cites} facts={facts} />
           </div>
@@ -123,7 +128,7 @@ export default function StrategyClient(props: StrategyClientProps) {
             )}
             {narrativeStatus === "needs_review" && (
               <div className="mt-2 rounded-md border border-[#f0d9a8] bg-[#fff8e8] px-3 py-2 text-xs text-[#8a5a00]">
-                一部の文で、数字がカードの値と一致していません（要確認）。打ち合わせの場で見直してください。
+                一部の文が検証に通りませんでした（数字・比較の言葉・表現のいずれか。要確認）。打ち合わせの場で見直してください。
               </div>
             )}
             <SourceNote className="mt-3">
@@ -142,7 +147,8 @@ export default function StrategyClient(props: StrategyClientProps) {
                   </div>
                   <div className="text-xs text-body leading-[1.8] mb-1.5">{t.description}</div>
                   <div className="text-[11px] text-muted">
-                    {t.score}点
+                    {t.available ? `${t.score}/${t.max}点` : "判断できない（指標が取れない）"}
+                    {t.confidence === "low" && <span className="ml-1 font-bold text-[#8a5a00]">仮説</span>}
                     {t.rules.length > 0 && <span> ／ 効いたルール：{t.rules.map((r) => r.id).join("、")}</span>}
                   </div>
                 </div>
@@ -150,15 +156,13 @@ export default function StrategyClient(props: StrategyClientProps) {
             </div>
           </div>
 
-          {byKey("appeal_points") && <AnswerSection section={byKey("appeal_points")!} facts={facts} />}
-          {byKey("target_persona") && <AnswerSection section={byKey("target_persona")!} facts={facts} />}
-          {byKey("competitor_diff") && <AnswerSection section={byKey("competitor_diff")!} facts={facts} />}
+          {OVERALL_SECTIONS.map((k) => byKey(k)).map((sec) => sec && <AnswerSection key={sec.key} section={sec} facts={facts} />)}
         </div>
       )}
 
       {tab === "media" && (
         <div className="grid gap-4">
-          {byKey("budget_rationale") && <AnswerSection section={byKey("budget_rationale")!} facts={facts} />}
+          {MEDIA_SECTIONS.map((k) => byKey(k)).map((sec) => sec && <AnswerSection key={sec.key} section={sec} facts={facts} />)}
 
           <div className={`${card} p-5`}>
             <div className="text-[13px] font-bold text-ink mb-4">

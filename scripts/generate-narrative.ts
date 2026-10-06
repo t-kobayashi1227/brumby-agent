@@ -3,9 +3,9 @@
 import { parseArgs } from "node:util";
 import { getSql } from "../lib/db";
 import { generateNarrative, MODEL } from "../lib/ai/generate";
-import { SECTION_TITLE, type SectionKey } from "../lib/ai/schema";
-
-const PROMPT_VERSION = "v1";
+import { describeMismatches } from "../lib/ai/validate";
+import { PROMPT_VERSION } from "../lib/ai/prompt";
+import { SECTION_TITLE, SENTENCE_KIND_LABEL, type SectionKey } from "../lib/ai/schema";
 
 async function main() {
   const { values } = parseArgs({ options: { property: { type: "string" }, run: { type: "string" } } });
@@ -25,37 +25,34 @@ async function main() {
     }
 
     console.log(`実行 ${runId} の事実カード・判断カードから、AIの文章を作ります…`);
-    const { content, validation, attempts } = await generateNarrative(sql, runId);
+    const { content, validation, attempts, inputTokens, outputTokens, durationMs } = await generateNarrative(sql, runId);
     const status = validation.ok ? "ok" : "needs_review";
 
     await sql`
-      insert into narratives (run_id, model, prompt_version, content, validation, status, attempts)
-      values (${runId}, ${MODEL}, ${PROMPT_VERSION}, ${sql.json(content as never)}, ${sql.json(validation as never)}, ${status}, ${attempts})
+      insert into narratives (run_id, model, prompt_version, content, validation, status, attempts, input_tokens, output_tokens, duration_ms)
+      values (${runId}, ${MODEL}, ${PROMPT_VERSION}, ${sql.json(content as never)}, ${sql.json(validation as never)}, ${status}, ${attempts},
+              ${inputTokens}, ${outputTokens}, ${durationMs})
       on conflict (run_id) do update set
         model = excluded.model, prompt_version = excluded.prompt_version, content = excluded.content,
-        validation = excluded.validation, status = excluded.status, attempts = excluded.attempts, created_at = now()
+        validation = excluded.validation, status = excluded.status, attempts = excluded.attempts,
+        input_tokens = excluded.input_tokens, output_tokens = excluded.output_tokens, duration_ms = excluded.duration_ms, created_at = now()
     `;
 
-    console.log(`状態：${status}（${attempts}回で生成）\n`);
+    console.log(`状態：${status}（${attempts}回で生成、入力 ${inputTokens}・出力 ${outputTokens} トークン、${(durationMs / 1000).toFixed(1)}秒）\n`);
     console.log(`# ${content.headline.text} [${content.headline.cites.map((c) => `F-${String(c).padStart(2, "0")}`).join(",")}]\n`);
     for (const section of content.sections) {
       console.log(`## ${SECTION_TITLE[section.key as SectionKey]}`);
       for (const paragraph of section.paragraphs) {
         for (const sentence of paragraph.sentences) {
-          console.log(`${sentence.text} [${sentence.cites.map((c) => `F-${String(c).padStart(2, "0")}`).join(",")}]`);
+          console.log(`（${SENTENCE_KIND_LABEL[sentence.kind]}）${sentence.text} [${sentence.cites.map((c) => `F-${String(c).padStart(2, "0")}`).join(",")}]`);
         }
       }
       console.log("");
     }
 
     if (!validation.ok) {
-      console.log("要確認（数字がカードと一致しなかった文）：");
-      for (const p of validation.paragraphs) {
-        if (p.ok) continue;
-        for (const s of p.sentences) {
-          if (s.mismatches.length > 0 || s.unknownCites.length > 0) console.log(`- ${s.text}`);
-        }
-      }
+      console.log("要確認（検証に通らなかった文）：");
+      console.log(describeMismatches(validation));
     }
   } finally {
     await sql.end();

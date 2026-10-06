@@ -8,8 +8,8 @@ import { simulateMediaAllocation, type MediaAllocation, type Rule } from "../../
 
 export async function simulateBudget(propertyId: number, totalManYen: number): Promise<MediaAllocation[]> {
   const sql = getSql();
-  const [property] = await sql<{ price_man_yen: number | null; land_sqm: string | null; building_sqm: string | null }[]>`
-    select price_man_yen, land_sqm, building_sqm from properties where id = ${propertyId}
+  const [property] = await sql<{ property_type: string; price_man_yen: number | null; land_sqm: string | null; building_sqm: string | null }[]>`
+    select property_type, price_man_yen, land_sqm, building_sqm from properties where id = ${propertyId}
   `;
   if (!property) throw new Error(`物件 ${propertyId} がありません`);
 
@@ -19,8 +19,8 @@ export async function simulateBudget(propertyId: number, totalManYen: number): P
   if (!run) throw new Error("分析の実行がありません");
 
   const [facts, rules] = await Promise.all([
-    sql<{ key: string; value: number | null; comparison: number | null; status: FactDraft["status"] }[]>`
-      select key, value, comparison, status from facts where run_id = ${run.id}
+    sql<{ key: string; value: number | null; value_text: string | null; comparison: number | null; status: FactDraft["status"] }[]>`
+      select key, value, value_text, comparison, status from facts where run_id = ${run.id}
     `,
     sql<Rule[]>`select id, kind, condition, effect, note, enabled, version from rules order by id`,
   ]);
@@ -28,11 +28,14 @@ export async function simulateBudget(propertyId: number, totalManYen: number): P
   const factDrafts: FactDraft[] = facts.map((f) => ({
     key: f.key,
     value: f.value === null ? null : Number(f.value),
+    valueText: f.value_text,
     comparison: f.comparison === null ? null : Number(f.comparison),
     status: f.status,
     datasetVersionIds: [],
   }));
+  // 条件の when（物件種別）を判定するため、種別も渡す
   const propertyRow = {
+    property_type: property.property_type,
     price_man_yen: property.price_man_yen,
     land_sqm: property.land_sqm === null ? null : Number(property.land_sqm),
     building_sqm: property.building_sqm === null ? null : Number(property.building_sqm),
