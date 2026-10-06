@@ -8,7 +8,7 @@ import { pages, findPage } from "../_lib/routes";
 export default function PrototypeNav() {
   const router = useRouter();
   const page = findPage(usePathname());
-  const current = page && !page.mock ? page.href : "";
+  const current = page && !page.mock && pages.some((p) => p.href === page.href) ? page.href : "";
   return (
     <div className="bg-night text-[#c9d3e3] px-5 py-1.5 flex items-center gap-3.5 text-xs flex-wrap">
       <span className="opacity-70">プロトタイプ画面ジャンプ:</span>

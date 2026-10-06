@@ -30,6 +30,7 @@ export function findPage(pathname: string): PageDef | undefined {
   const exact = pages.find((p) => p.href === pathname);
   if (exact) return exact;
   if (pathname.startsWith("/monitor/")) return pages.find((p) => p.href === "/monitor/0");
+  if (/^\/properties\/\d+$/.test(pathname)) return { href: pathname, title: "物件の情報・位置" };
   return undefined;
 }
 

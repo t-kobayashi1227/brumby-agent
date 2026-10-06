@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { card, btnPrimary, fieldLabel } from "../../_lib/ui";
 import { advanceAnalysis, startAnalysis } from "./actions";
@@ -66,7 +67,10 @@ export default function AnalysisRunner({ propertyId, lastRadius }: { propertyId:
       <div className="flex flex-wrap items-end gap-3">
         <div className="text-[13px] font-bold text-ink mr-auto">
           分析する
-          <div className="text-[11px] font-normal text-muted mt-0.5">条件を変えて実行すると、新しい結果として残ります（前の結果は消えません）</div>
+          <div className="text-[11px] font-normal text-muted mt-0.5">
+            条件を変えて実行すると、新しい結果として残ります（前の結果は消えません）。
+            <Link href={`/properties/${propertyId}`} className="text-brand underline ml-1">物件の情報・位置・総予算を直す</Link>
+          </div>
         </div>
         <label className={`${fieldLabel} w-48`}>
           人口構成の半径

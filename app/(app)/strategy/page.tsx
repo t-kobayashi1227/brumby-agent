@@ -23,7 +23,10 @@ export default async function StrategyPage({ searchParams }: { searchParams: Sea
 
   const hasRun = report.run.id !== 0;
   const narrative = report.narrative;
-  const totalManYen = findFact(report.facts, "decision.total_budget")?.value ?? null;
+  const budgetFact = findFact(report.facts, "decision.total_budget");
+  const totalManYen = budgetFact?.value ?? null;
+  const source = (budgetFact?.basis as { source?: unknown } | null)?.source;
+  const budgetSource = source === "input" || source === "rule" ? source : null;
   const budgetOptions = [...new Set([...totalBudgetOptions(report.rules), ...(totalManYen !== null ? [totalManYen] : [])])].sort((a, b) => a - b);
 
   const lastRadius = typeof report.run.params.radius_m === "number" ? report.run.params.radius_m : null;
@@ -41,6 +44,7 @@ export default async function StrategyPage({ searchParams }: { searchParams: Sea
         targets={targetRanking(report.facts)}
         media={mediaBreakdown(report.facts).map((m) => ({ id: m.id, amount: m.amount, rules: m.rules }))}
         totalManYen={totalManYen}
+        budgetSource={budgetSource}
         budgetOptions={budgetOptions}
         propertyId={propertyId}
         censusSource={CENSUS_SOURCE}

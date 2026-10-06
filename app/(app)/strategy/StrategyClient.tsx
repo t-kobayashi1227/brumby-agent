@@ -33,6 +33,8 @@ export interface StrategyClientProps {
   targets: TargetRankItem[];
   media: MediaRow[];
   totalManYen: number | null;
+  /** 総予算の出どころ（D15）：input＝物件の登録で入力した額／rule＝ルール表の提案値 */
+  budgetSource: "input" | "rule" | null;
   budgetOptions: number[];
   propertyId: number;
   censusSource: string;
@@ -75,7 +77,7 @@ function AnswerSection({ section, facts }: { section: Section; facts: FactLite[]
 }
 
 export default function StrategyClient(props: StrategyClientProps) {
-  const { hasRun, headline, sections, narrativeStatus, facts, targets, totalManYen, budgetOptions, propertyId, censusSource, mlitSource } = props;
+  const { hasRun, headline, sections, narrativeStatus, facts, targets, totalManYen, budgetSource, budgetOptions, propertyId, censusSource, mlitSource } = props;
   const [tab, setTab] = useState("overall");
   const [budget, setBudget] = useState<number>(totalManYen ?? budgetOptions[0] ?? 0);
   const [media, setMedia] = useState<MediaRow[]>(props.media);
@@ -168,7 +170,7 @@ export default function StrategyClient(props: StrategyClientProps) {
 
           <div className={`${card} p-5`}>
             <div className="text-[13px] font-bold text-ink mb-4">
-              推奨の媒体戦略（総予算{budget}万円{budget === totalManYen ? "・ルール表が決めた額" : "・シミュレーション中"}）
+              推奨の媒体戦略（総予算{budget}万円{budget === totalManYen ? (budgetSource === "input" ? "・物件の登録で入力した額" : "・ルール表の提案値（入力なし）") : "・シミュレーション中"}）
             </div>
             <div className="flex gap-7 items-center flex-wrap">
               <div className="size-[150px] rounded-full flex items-center justify-center" style={{ background: gradient, opacity: pending ? 0.5 : 1 }}>
