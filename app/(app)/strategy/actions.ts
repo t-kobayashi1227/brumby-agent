@@ -3,6 +3,24 @@
 import { getSql } from "../../../lib/db";
 import type { FactDraft, PropertyRow } from "../../../lib/types";
 import { simulateMediaAllocation, type MediaAllocation, type Rule } from "../../../lib/rules/engine";
+import { advanceRun, startRun, type RunProgress } from "../../../lib/analyzers/stages";
+import { RADIUS_CHOICES } from "./radius";
+
+/**
+ * 分析を始める（設計書 D34）。同じ物件で進行中の実行があれば、それを返す（連打しても二重に動かない）
+ * 画面は、この後 advanceAnalysis を status が running でなくなるまで呼ぶ
+ */
+export async function startAnalysis(propertyId: number, radiusM: number | null): Promise<RunProgress> {
+  if (!Number.isInteger(propertyId) || propertyId <= 0) throw new Error("物件の番号が正しくありません");
+  if (!(RADIUS_CHOICES as readonly (number | null)[]).includes(radiusM)) throw new Error("半径が選択肢にありません");
+  return startRun(getSql(), propertyId, radiusM === null ? {} : { radius_m: radiusM });
+}
+
+/** 分析を1段階だけ進める（集計 → ルール → AI → 検証）。1回の呼び出しが実行時間の上限を超えないように分けている */
+export async function advanceAnalysis(runId: number): Promise<RunProgress> {
+  if (!Number.isInteger(runId) || runId <= 0) throw new Error("実行の番号が正しくありません");
+  return advanceRun(getSql(), runId);
+}
 
 // 予算別シミュレーション（ルール表の画面と同じルールエンジンで、総予算だけを変えて計算し直す）
 

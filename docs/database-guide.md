@@ -405,7 +405,8 @@ where p.id = 1;
 | `dataset_version_ids` | bigint[] | 必須 | 使った公開データの版 | `{4,7,13,22}` |
 | `rules_version` | bigint | | 使ったルールの版（その時点の `rule_revisions.id` の最大） | |
 | `status` | text | 必須 | `running`（実行中）／`succeeded`（成功）／`failed`（失敗） | |
-| `stage` | text | | 進み具合。`analyze`（集計）→ `rules`（ルール）→ `ai`（AI）→ `verify`（検証） | |
+| `stage` | text | | 次に進める段階。`analyze`（集計）→ `rules`（ルール）→ `ai`（AI）→ `verify`（検証）。段階ごとに別の呼び出しで進める（設計書D34） | |
+| `stage_started_at` | timestamptz | | いまの段階を進めている印（空なら誰も進めていない）。10分たっても空にならなければ、止まったものとして取り直せる | |
 | `error` | text | | 失敗したときの理由 | |
 | `created_at` / `finished_at` | timestamptz | | 始めた日時・終わった日時 | |
 

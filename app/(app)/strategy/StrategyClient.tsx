@@ -82,7 +82,7 @@ export default function StrategyClient(props: StrategyClientProps) {
   const [pending, startTransition] = useTransition();
 
   if (!hasRun) {
-    return <div className={emptyState}>この物件はまだ分析が実行されていません（npm run analyze）。</div>;
+    return <div className={emptyState}>この物件はまだ分析が実行されていません（上の「分析する」で実行できます）。</div>;
   }
 
   const byKey = (key: SectionKey) => sections.find((s) => s.key === key);
@@ -118,13 +118,15 @@ export default function StrategyClient(props: StrategyClientProps) {
         <div className="grid gap-4">
           <div className={`${card} p-5.5`}>
             <div className="text-[13px] text-muted mb-3">この物件の総合評価</div>
-            {headline ? (
+            {narrativeStatus === "failed" ? (
+              <div className="text-[13px] text-muted">AIの文章は生成できませんでした。事実カードと判断カード（ルール表による判断）だけを表示しています。</div>
+            ) : headline ? (
               <div className="text-base font-extrabold text-accent mb-2">
                 {headline.text}
                 <CiteBadges cites={headline.cites} facts={facts} />
               </div>
             ) : (
-              <div className="text-[13px] text-muted">AIの文章がまだ生成されていません（npm run generate-narrative）。</div>
+              <div className="text-[13px] text-muted">AIの文章がまだ生成されていません（上の「分析する」で作れます）。</div>
             )}
             {narrativeStatus === "needs_review" && (
               <div className="mt-2 rounded-md border border-[#f0d9a8] bg-[#fff8e8] px-3 py-2 text-xs text-[#8a5a00]">

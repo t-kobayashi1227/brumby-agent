@@ -6,7 +6,7 @@ import { NarrativeContentSchema, type NarrativeContent } from "./schema";
 import type { FactRow, PropertySummary, ValidationResult } from "./types";
 import { describeMismatches, validateNarrative } from "./validate";
 
-// AIの文章の生成（設計書 6.2・6.3）：生成 → 検証 → 不合格なら1回だけ作り直し → それでも不合格なら要確認のまま返す
+// AIの文章の生成（設計書 6.2・6.3）：下書き（段階「AI」）→ 検証・不合格なら1回だけ作り直し（段階「検証」）→ それでも不合格なら要確認のまま返す
 // AIに送るのは物件の最小限の情報とカードだけ（D28）。物件名・詳しい住所は送らない。ログにも物件の本文や住所を出さない
 
 /** まず Claude Sonnet 5。文章の質が足りなければ Opus 5.5 と比べる（設計書 6.2） */
@@ -105,46 +105,71 @@ async function callClaude(client: Anthropic, outputFormat: AutoParseableOutputFo
   }
 }
 
-export async function generateNarrative(sql: Sql, runId: number): Promise<GenerateResult> {
+interface Usage {
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+}
+
+/** 1回呼んで、使ったトークン数と時間を usage に足す */
+async function callAndCount(client: Anthropic, messages: Anthropic.Messages.MessageParam[], usage: Usage): Promise<NarrativeContent> {
+  const started = Date.now();
+  const response = await callClaude(client, zodOutputFormat(NarrativeContentSchema), messages);
+  usage.durationMs += Date.now() - started;
+  const u = response.usage;
+  usage.inputTokens += u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+  usage.outputTokens += u.output_tokens;
+  return extractParsed(response);
+}
+
+async function loadContext(sql: Sql, runId: number) {
   const [property, facts] = await Promise.all([loadPropertySummary(sql, runId), loadFacts(sql, runId)]);
   if (facts.length === 0) throw new Error(`実行 ${runId} にカードがありません（先に分析を実行してください）`);
+  return { property, facts, prompt: buildUserPrompt(property, facts), ctx: { propertyText: propertyText(property), competitorCount: property.competitorCount } };
+}
 
-  const client = new Anthropic();
-  const outputFormat = zodOutputFormat(NarrativeContentSchema);
-  const messages: Anthropic.Messages.MessageParam[] = [{ role: "user", content: buildUserPrompt(property, facts) }];
-  const ctx = { propertyText: propertyText(property), competitorCount: property.competitorCount };
-  const usage = { inputTokens: 0, outputTokens: 0, durationMs: 0 };
-  const call = async () => {
-    const started = Date.now();
-    const response = await callClaude(client, outputFormat, messages);
-    usage.durationMs += Date.now() - started;
-    const u = response.usage;
-    usage.inputTokens += u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
-    usage.outputTokens += u.output_tokens;
-    return response;
-  };
+/** 段階「AI」（D34）：文章の下書きを1回だけ作る。検証と作り直しは次の段階 */
+export async function draftNarrative(sql: Sql, runId: number): Promise<{ content: NarrativeContent } & Usage> {
+  const { prompt } = await loadContext(sql, runId);
+  const usage: Usage = { inputTokens: 0, outputTokens: 0, durationMs: 0 };
+  const content = await callAndCount(new Anthropic(), [{ role: "user", content: prompt }], usage);
+  return { content, ...usage };
+}
 
-  let response = await call();
-  let content = extractParsed(response);
+/**
+ * 段階「検証」（D34）：下書きを検証し、不合格なら理由を伝えて1回だけ作り直させる（設計書 6.3）
+ * usage には下書きの分を渡し、作り直しの分を足して返す
+ */
+export async function verifyNarrative(sql: Sql, runId: number, draft: NarrativeContent, usage: Usage = { inputTokens: 0, outputTokens: 0, durationMs: 0 }): Promise<GenerateResult> {
+  const { facts, prompt, ctx } = await loadContext(sql, runId);
+  const total = { ...usage };
+  let content = draft;
   let validation = validateNarrative(content, facts, ctx);
   let attempts = 1;
 
   if (!validation.ok) {
-    messages.push({ role: "assistant", content: response.content });
-    messages.push({
-      role: "user",
-      content: [
-        "次の文が検証に通りませんでした。該当する文だけを、理由に合わせて書き直してください（他の文は変えないでください）。",
-        describeMismatches(validation),
-        `JSON全体（headline・${content.sections.length}セクション分）を、指定した形式でもう一度出力してください。`,
-      ].join("\n\n"),
-    });
-
-    response = await call();
-    content = extractParsed(response);
+    const messages: Anthropic.Messages.MessageParam[] = [
+      { role: "user", content: prompt },
+      { role: "assistant", content: JSON.stringify(draft) },
+      {
+        role: "user",
+        content: [
+          "次の文が検証に通りませんでした。該当する文だけを、理由に合わせて書き直してください（他の文は変えないでください）。",
+          describeMismatches(validation),
+          `JSON全体（headline・${content.sections.length}セクション分）を、指定した形式でもう一度出力してください。`,
+        ].join("\n\n"),
+      },
+    ];
+    content = await callAndCount(new Anthropic(), messages, total);
     validation = validateNarrative(content, facts, ctx);
     attempts = 2;
   }
 
-  return { content, validation, attempts, ...usage };
+  return { content, validation, attempts, ...total };
+}
+
+/** 下書きから検証・作り直しまでを続けて行う（npm run generate-narrative 用） */
+export async function generateNarrative(sql: Sql, runId: number): Promise<GenerateResult> {
+  const { content, ...usage } = await draftNarrative(sql, runId);
+  return verifyNarrative(sql, runId, content, usage);
 }
