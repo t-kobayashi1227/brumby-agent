@@ -66,7 +66,7 @@ export const reinfolibTransactions: IngestJob = {
     return { coverage: `pref:${pref}`, period: `${label(from)}-${label(to)}` };
   },
 
-  async load({ sql, versionId, args, saveRaw, log }) {
+  async load({ sql, versionId, args, saveRaw, log, setPublishedOn }) {
     const key = requireEnv("REINFOLIB_API_KEY");
     const pref = args.pref ?? "15";
     const from = parseQuarter(args.from ?? "2015Q1");
@@ -117,6 +117,8 @@ export const reinfolibTransactions: IngestJob = {
         };
       });
       await insertRows(sql, "transactions", rows);
+      // データの時点：取れた中で最新の四半期の最初の月（D31）
+      setPublishedOn(`${q.year}-${String((q.quarter - 1) * 3 + 1).padStart(2, "0")}-01`);
       log(`${label(q)}：${rows.length}件`);
       await sleep(300);
     }

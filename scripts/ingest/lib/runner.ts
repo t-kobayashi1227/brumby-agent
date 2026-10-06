@@ -1,5 +1,6 @@
 import type postgres from "postgres";
 import { getSql, type Sql } from "../../../lib/db";
+import { classifyFailure } from "./http";
 import { saveRaw } from "./raw-store";
 
 // 取り込みの共通の流れ（設計書 4.1）
@@ -15,6 +16,11 @@ export interface IngestContext {
   /** 生データを Storage の「source/dataset/版のID/name」に保存する */
   saveRaw: (name: string, body: string | Uint8Array<ArrayBuffer>, contentType?: string) => Promise<string>;
   log: (message: string) => void;
+  /**
+   * データの時点（yyyy-mm-dd）を記録する（D31。鮮度＝この日から実施日までの差を出すため）
+   * 取引価格は最新の四半期の最初の月、地価は年の1月1日、国勢調査は e-Stat の公開日
+   */
+  setPublishedOn: (date: string) => void;
 }
 
 export interface IngestJob {
@@ -41,6 +47,7 @@ export async function runIngest(job: IngestJob, args: IngestArgs, command: strin
     returning id
   `;
   const versionId = Number(version.id);
+  let publishedOn: string | null = null;
   const log = (message: string) => console.log(`[${job.dataset} v${versionId}] ${message}`);
   log(`版を作りました（${coverage}${period ? `、${period}` : ""}）`);
 
@@ -51,6 +58,10 @@ export async function runIngest(job: IngestJob, args: IngestArgs, command: strin
       args,
       saveRaw: (name, body, contentType) => saveRaw(`${rawPrefix}/${versionId}/${name}`, body, contentType),
       log,
+      setPublishedOn: (date) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`データの時点の形が違います：${date}`);
+        if (publishedOn === null || date > publishedOn) publishedOn = date;
+      },
     });
 
     const { total, nullRatios } = await measure(sql, job.table, versionId);
@@ -66,22 +77,24 @@ export async function runIngest(job: IngestJob, args: IngestArgs, command: strin
       await tx`
         update dataset_versions
         set status = 'active', row_count = ${total},
-            raw_uri = ${`storage://ingest-raw/${rawPrefix}/${versionId}/`}
+            raw_uri = ${`storage://ingest-raw/${rawPrefix}/${versionId}/`},
+            source_published_at = coalesce(source_published_at, ${publishedOn}::date)
         where id = ${versionId}
       `;
       await tx`
-        insert into ingest_logs (dataset_version_id, command, status, row_count, null_ratios, started_at)
-        values (${versionId}, ${command}, 'succeeded', ${total}, ${tx.json(nullRatios)}, ${startedAt})
+        insert into ingest_logs (dataset_version_id, command, status, row_count, null_ratios, published_on, started_at)
+        values (${versionId}, ${command}, 'succeeded', ${total}, ${tx.json(nullRatios)}, ${publishedOn}, ${startedAt})
       `;
     });
-    log("使用中に切り替えました");
+    log(`使用中に切り替えました${publishedOn ? `（データの時点 ${publishedOn}）` : ""}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const failureKind = classifyFailure(error);
     await sql`
-      insert into ingest_logs (dataset_version_id, command, status, error, started_at)
-      values (${versionId}, ${command}, 'failed', ${message}, ${startedAt})
+      insert into ingest_logs (dataset_version_id, command, status, error, failure_kind, started_at)
+      values (${versionId}, ${command}, 'failed', ${message}, ${failureKind}, ${startedAt})
     `;
-    log(`失敗しました。版は loading のまま残します：${message}`);
+    log(`失敗しました（${failureKind}）。版は loading のまま残します：${message}`);
     throw error;
   }
 }

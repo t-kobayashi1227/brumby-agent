@@ -146,8 +146,8 @@ where v.status = 'active';
 | `null_ratios` | jsonb | | 列ごとの空欄の割合（0〜1） | `{"structure": 0.625, "trade_price": 0}` |
 | `near_property_counts` | jsonb | | 物件の周りで取れた件数（これから使う） | |
 | `error` | text | | 失敗したときの理由 | |
-| `failure_kind` | text | | 失敗の種類（失敗のときだけ）。`auth`（認証）／`rate_limit`（回数制限）／`network`（通信）／`other` | `rate_limit` |
-| `published_on` | date | | データの公開年月（月の1日を入れる）。鮮度（公開から実施日までの差）に使う | `2026-03-01` |
+| `failure_kind` | text | | 失敗の種類（失敗のときだけ）。`auth`（APIキーがない・401・403）／`rate_limit`（429）／`network`（通信の失敗・時間切れ・5xx）／`other` | `rate_limit` |
+| `published_on` | date | | データの時点。鮮度（この日から実施日までの差）に使う。取引価格は取れた中で最新の四半期の最初の月、地価はその年の1月1日、国勢調査は e-Stat の公開日。`dataset_versions.source_published_at` にも入れる | `2026-01-01` |
 | `started_at` | timestamptz | 必須 | 始めた日時 | |
 | `finished_at` | timestamptz | 必須 | 終わった日時 | |
 

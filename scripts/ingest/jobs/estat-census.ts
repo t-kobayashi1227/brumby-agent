@@ -64,6 +64,8 @@ interface StatsData {
     RESULT: { STATUS: number; ERROR_MSG: string };
     STATISTICAL_DATA?: {
       RESULT_INF: { TOTAL_NUMBER: number; NEXT_KEY?: number };
+      /** 表の情報。OPEN_DATE は公開日（例：2022-06-24） */
+      TABLE_INF?: { OPEN_DATE?: string };
       CLASS_INF?: { CLASS_OBJ: ClassObj | ClassObj[] };
       DATA_INF?: { VALUE: Value | Value[] };
     };
@@ -96,7 +98,7 @@ export const estatCensus: IngestJob = {
     return { coverage: `pref:${args.pref ?? "15"}${tables}`, period: "2020" };
   },
 
-  async load({ sql, versionId, args, saveRaw, log }) {
+  async load({ sql, versionId, args, saveRaw, log, setPublishedOn }) {
     const appId = requireEnv("ESTAT_APP_ID");
     const pref = args.pref ?? "15";
     const names = args.tables ? args.tables.split(",") : Object.keys(TABLES);
@@ -126,6 +128,9 @@ export const estatCensus: IngestJob = {
         pages.push(body);
 
         const data: NonNullable<StatsData["GET_STATS_DATA"]["STATISTICAL_DATA"]> = body.GET_STATS_DATA.STATISTICAL_DATA!;
+        // データの時点：e-Stat の公開日（D31）。形が違えば記録しない
+        const openDate = data.TABLE_INF?.OPEN_DATE?.slice(0, 10);
+        if (openDate && /^\d{4}-\d{2}-\d{2}$/.test(openDate)) setPublishedOn(openDate);
         for (const obj of list(data.CLASS_INF?.CLASS_OBJ)) {
           if (obj["@id"] !== "area") continue;
           for (const c of list(obj.CLASS)) levels.set(c["@code"], c["@level"] ?? "");

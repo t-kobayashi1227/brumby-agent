@@ -49,10 +49,12 @@ export const reinfolibLandPrices: IngestJob = {
     return { coverage: coverageOf(args), period: args.year };
   },
 
-  async load({ sql, versionId, args, saveRaw, log }) {
+  async load({ sql, versionId, args, saveRaw, log, setPublishedOn }) {
     const key = requireEnv("REINFOLIB_API_KEY");
     const pref = args.pref ?? "15";
     const year = Number(args.year);
+    // データの時点：地価公示の価格時点（その年の1月1日。D31）
+    setPublishedOn(`${year}-01-01`);
 
     let tiles: Tile[];
     if (args.bbox) {
