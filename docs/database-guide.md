@@ -3,12 +3,12 @@
 BRUMBY PoC の Supabase（共有のクラウドのプロジェクト）にあるテーブルと列の説明。
 Supabase のダッシュボード（Table Editor）を開いたときに、「このテーブルは何か」「この列は何か」がわかるように書いている。
 
-- 対象：`public` スキーマの18のテーブル
+- 対象：`public` スキーマの20のテーブル
 - テーブルの定義の元：`supabase/migrations/`（このファイルとずれたら、マイグレーションが正しい）
 - データの取り込みの仕組みと注意点：[`data-notes.md`](data-notes.md)
 - 取り込むたびの結果：[`data-ingest-records.md`](data-ingest-records.md)
 
-最終更新：2026-10-04
+最終更新：2026-10-06
 
 ---
 
@@ -28,7 +28,8 @@ Supabase のダッシュボード（Table Editor）を開いたときに、「�
                           │
 ④ 分析の結果          analysis_runs（分析1回分）─ facts（事実カード・判断カード）
                                               └ narratives（AIの文章）─ evaluations（評価）
-⑤ ルール表           rules ─ rule_revisions（変更の履歴）
+⑤ ルール表           rules ・ target_candidates（狙う層の候補）・ appeal_items（訴求の素材）
+                          └ rule_revisions（3つの表の変更の履歴）
 ```
 
 ### テーブルの一覧
@@ -50,9 +51,11 @@ Supabase のダッシュボード（Table Editor）を開いたときに、「�
 | ④ 分析の結果 | `analysis_runs` | 分析の実行1回分 | 22（仮の物件で試し） | 分析のコマンド（本番では画面の「分析する」） |
 | ④ 分析の結果 | `facts` | 事実カード・判断カード | 430（仮の物件で試し） | 同上 |
 | ④ 分析の結果 | `narratives` | AIが書いた説明文 | 0 | （これから）分析の処理 |
-| ④ 分析の結果 | `evaluations` | 段落ごとの評価 | 0 | （これから）評価の入力画面 |
+| ④ 分析の結果 | `evaluations` | 評価（5段階×4観点） | 0 | （これから）評価の入力画面 |
 | ⑤ ルール表 | `rules` | 予算配分・狙う層を決めるルール | 20（仮のルール） | `npm run seed-rules` で最初に入れ、以後はルール表の画面（`/rules`）か Studio で人が直す |
-| ⑤ ルール表 | `rule_revisions` | ルールの変更の履歴 | 24 | 自動（`rules` を変えると記録される） |
+| ⑤ ルール表 | `target_candidates` | 狙う層の候補 | 0 | ルール表の画面（`/rules`）か Studio で人が直す |
+| ⑤ ルール表 | `appeal_items` | 訴求の素材 | 0 | 同上 |
+| ⑤ ルール表 | `rule_revisions` | ルール・候補・訴求の変更の履歴 | 24 | 自動（`rules`・`target_candidates`・`appeal_items` を変えると記録される） |
 
 ---
 
@@ -143,6 +146,8 @@ where v.status = 'active';
 | `null_ratios` | jsonb | | 列ごとの空欄の割合（0〜1） | `{"structure": 0.625, "trade_price": 0}` |
 | `near_property_counts` | jsonb | | 物件の周りで取れた件数（これから使う） | |
 | `error` | text | | 失敗したときの理由 | |
+| `failure_kind` | text | | 失敗の種類（失敗のときだけ）。`auth`（認証）／`rate_limit`（回数制限）／`network`（通信）／`other` | `rate_limit` |
+| `published_on` | date | | データの公開年月（月の1日を入れる）。鮮度（公開から実施日までの差）に使う | `2026-03-01` |
 | `started_at` | timestamptz | 必須 | 始めた日時 | |
 | `finished_at` | timestamptz | 必須 | 終わった日時 | |
 
@@ -358,6 +363,9 @@ where p.id = 1;
 | `parking` | smallint | | 駐車場の台数 | `2` |
 | `access` | text | | 交通 | `最寄り駅 徒歩12分` |
 | `features` | text | | 特徴 | `ZEH仕様` |
+| `total_budget_man_yen` | integer | | 広告の総予算（万円）。利用者が入力する。空なら `total_budget` ルールの提案値を使う（設計書D15） | `30` |
+| `sales_deadline` | date | | 販売期限 | `2027-03-31` |
+| `sales_goal` | text | | 販促目的 | `見学予約を増やしたい` |
 | `created_at` / `updated_at` | timestamptz | 必須 | 作った日時・最後に変えた日時 | |
 
 ### `competitors`：競合物件
@@ -375,6 +383,10 @@ where p.id = 1;
 | `walk_min` | smallint | | 駅からの徒歩（分） | `12` |
 | `parking` | smallint | | 駐車場の台数 | `2` |
 | `features` | text | | 特徴 | `南向き・太陽光発電付き` |
+| `source_type` | text | | どこで見たか。`seen`（見かけた）／`portal`（ポータル）／`other`（設計書D30） | `portal` |
+| `source_site` | text | | 参照サイト名 | `SUUMO` |
+| `confirmed_on` | date | | 確認日 | `2026-10-06` |
+| `entered_by` | text | | 入力者 | |
 | `created_at` / `updated_at` | timestamptz | 必須 | 作った日時・最後に変えた日時 | |
 
 ---
@@ -389,7 +401,7 @@ where p.id = 1;
 |---|---|---|---|---|
 | `id` | bigint | 必須 | 実行の番号 | |
 | `property_id` | bigint | 必須 | どの物件の分析か | |
-| `params` | jsonb | 必須 | 分析の条件 | `{"radius_m":1000,"price_min_n":10,"price_years":3}` |
+| `params` | jsonb | 必須 | 分析の条件。`min_top_score`・`tie_margin` は狙う層の絞り込みの基準 | `{"radius_m":1000,"price_min_n":10,"price_years":3,"min_top_score":2,"tie_margin":0}` |
 | `dataset_version_ids` | bigint[] | 必須 | 使った公開データの版 | `{4,7,13,22}` |
 | `rules_version` | bigint | | 使ったルールの版（その時点の `rule_revisions.id` の最大） | |
 | `status` | text | 必須 | `running`（実行中）／`succeeded`（成功）／`failed`（失敗） | |
@@ -475,20 +487,23 @@ order by f.seq;
 | `model` | text | 必須 | 使ったAIのモデル | |
 | `prompt_version` | text | 必須 | 使った指示文（プロンプト）の版 | |
 | `content` | jsonb | 必須 | 文章。セクション → 段落 → 文 → 引用したカードの番号 | |
-| `validation` | jsonb | | 文中の数字がカードと合っているかの検証結果（段落ごと） | |
+| `validation` | jsonb | | 検証の結果（段落ごと）。文の種別・数字・比較語・禁止表現（設計書6.3） | |
 | `status` | text | 必須 | `ok`／`needs_review`（要確認）／`failed`（生成できなかった） | |
 | `attempts` | smallint | 必須 | 生成した回数（検証に通らないと1回だけ作り直す） | `1` |
+| `input_tokens` / `output_tokens` | integer | | AIに送った・受け取ったトークン数（作り直しを含めた合計。設計書D17） | `8200` / `2100` |
+| `duration_ms` | integer | | 生成にかかった時間（ミリ秒、作り直しを含めた合計） | `34000` |
 | `created_at` | timestamptz | 必須 | 作った日時 | |
 
-### `evaluations`：段落ごとの評価
-**1行＝AIの文章の1段落に対する評価1つ**（PoCの確認2の材料）。
+### `evaluations`：評価（5段階×4観点）
+**1行＝1つの観点の点数1つ**（PoCの確認2の材料。設計書D18・10章）。具体性・実行可能性は4つの答えごと、根拠整合・UI可読性は物件ごと（`answer_key` は空）に付ける。
 
 | 列 | 型 | 必須 | 説明 | 例 |
 |---|---|---|---|---|
 | `id` | bigint | 必須 | 行の番号 | |
-| `narrative_id` | bigint | 必須 | どの文章の評価か | |
-| `paragraph_key` | text | 必須 | どの段落か | |
-| `rating` | text | 必須 | `usable`（使える）／`fixable`（直せば使える）／`unusable`（使えない） | |
+| `narrative_id` | bigint | 必須 | どの文章（＝どの実行）の評価か | |
+| `answer_key` | text | | 4つの答えのどれか。`target`（狙う層）／`appeal`（訴求）／`media_budget`（媒体予算）／`action`（進め方）。物件ごとの観点では空 | `target` |
+| `criterion` | text | 必須 | 観点。`specificity`（具体性）／`feasibility`（実行可能性）／`evidence`（根拠整合）／`readability`（UI可読性） | `specificity` |
+| `score` | smallint | 必須 | 1〜5点（5＝そのまま取引先に出せる〜1＝使えない・事実が誤っている） | `4` |
 | `memo` | text | | メモ | |
 | `evaluator` | text | | 評価した人 | |
 | `created_at` | timestamptz | 必須 | 評価した日時 | |
@@ -498,29 +513,57 @@ order by f.seq;
 ## 7. ⑤ ルール表
 
 ### `rules`：ルール
-**1行＝ルール1つ。** 狙う層の順位や予算配分を決める。BRUMBY様からの聞き取りで育てる。**ルール表の画面（`/rules`）か Supabase Studio で直接直してよい**（設計書D4の例外、D14）。編集すると `version` が自動で上がり、変更が `rule_revisions` に残る。
+**1行＝ルール1つ。** 狙う層の順位、訴求の選び方、予算配分を決める。BRUMBY様からの聞き取りで育てる。**ルール表の画面（`/rules`）か Supabase Studio で直接直してよい**（設計書D4の例外、D14）。編集すると `version` が自動で上がり、変更が `rule_revisions` に残る。
 
 | 列 | 型 | 必須 | 説明 | 例 |
 |---|---|---|---|---|
 | `id` | text | 必須 | ルールの番号 | `R-21` |
-| `kind` | text | 必須 | 種類。`total_budget`（総予算）／`media_weight`（媒体の重み）／`min_spend`（最低額）／`target_score`（狙う層の点数） | `media_weight` |
-| `condition` | jsonb | 必須 | 条件（事実カードの値の比較） | `{"fact":"target.age_30_49_ratio","op":">","than":"comparison","delta":0.05}` |
-| `effect` | jsonb | 必須 | 条件に当てはまったときの効果 | `{"media":"instagram","weight":2}` |
+| `kind` | text | 必須 | 種類。`total_budget`（総予算）／`media_weight`（媒体の重み）／`min_spend`（最低額）／`target_score`（狙う層の点数）／`appeal_score`（訴求の点数） | `media_weight` |
+| `condition` | jsonb | 必須 | 条件（事実カードの値の比較）。`when` で物件種別を絞れる | `{"fact":"target.age_30_49_ratio","op":">","than":"comparison","delta":0.05,"when":{"property_type":["新築戸建"]}}` |
+| `effect` | jsonb | 必須 | 条件に当てはまったときの効果 | `{"media":"instagram","weight":2}` ／ `{"candidate":"family","score":1}` ／ `{"appeal":"school_near","score":1}` |
 | `note` | text | 必須 | 理由（BRUMBY様の言葉で書く） | |
 | `enabled` | boolean | 必須 | 使うかどうか | `true` |
 | `version` | integer | 必須 | ルールの版。編集すると自動で1つ上がる | `1` |
 | `updated_by` | text | | 最後に変えた人 | |
 | `updated_at` | timestamptz | 必須 | 最後に変えた日時（自動） | |
 
-### `rule_revisions`：ルールの変更の履歴
-**1行＝ルールの追加・変更・削除1回。** 自動で記録される（手で書かない）。
+### `target_candidates`：狙う層の候補
+**1行＝狙う層の候補1つ**（設計書D22）。候補はコードに書かず、この表の行にする。点数は `rules` の `target_score` で付ける。`/rules` か Studio で直してよい。変更は `rule_revisions` に残る。
 
 | 列 | 型 | 必須 | 説明 | 例 |
 |---|---|---|---|---|
-| `id` | bigint | 必須 | 履歴の番号。分析の実行には、この最大値を「ルールの版」として残す | |
-| `rule_id` | text | 必須 | どのルールか | `R-21` |
+| `id` | text | 必須 | 候補の番号（ルールの `effect` から指す） | `family` |
+| `label` | text | 必須 | 画面に出す名前 | `30〜40代の子育てファミリー` |
+| `description` | text | 必須 | 説明 | `賃貸からの住み替え層。学校・駐車場・広さに関心` |
+| `property_types` | text[] | | 対象の物件種別。空なら全部 | `{新築戸建,中古戸建}` |
+| `sort_order` | integer | 必須 | 並び順。同点のときは小さいほうを上にする | `1` |
+| `enabled` | boolean | 必須 | 使うかどうか | `true` |
+| `updated_by` / `updated_at` | text / timestamptz | | 最後に変えた人・日時（日時は自動） | |
+
+### `appeal_items`：訴求の素材
+**1行＝訴求の素材1つ**（設計書D23・6.4）。`rules` の `appeal_score` で点を付け、上位3つを使う。AIは選ばれた素材を言い換えるだけ。
+
+| 列 | 型 | 必須 | 説明 | 例 |
+|---|---|---|---|---|
+| `id` | text | 必須 | 素材の番号（ルールの `effect` から指す） | `school_near` |
+| `label` | text | 必須 | 画面に出す名前 | `小・中学校が近い` |
+| `description` | text | 必須 | 説明 | |
+| `needs_facts` | text[] | 必須 | 必要な事実カードの `key`。1つでも `ok` でなければ選ばない | `{facility.elementary_nearest}` |
+| `property_types` | text[] | | 対象の物件種別。空なら全部 | `{土地}` |
+| `sort_order` | integer | 必須 | 並び順。同点のときは小さいほうを上にする | `1` |
+| `enabled` | boolean | 必須 | 使うかどうか | `true` |
+| `updated_by` / `updated_at` | text / timestamptz | | 最後に変えた人・日時（日時は自動） | |
+
+### `rule_revisions`：ルール・候補・訴求の変更の履歴
+**1行＝`rules`・`target_candidates`・`appeal_items` の追加・変更・削除1回。** 自動で記録される（手で書かない）。
+
+| 列 | 型 | 必須 | 説明 | 例 |
+|---|---|---|---|---|
+| `id` | bigint | 必須 | 履歴の番号。分析の実行には、この最大値を「ルールの版」として残す（候補・訴求の変更も版が上がる） | |
+| `table_name` | text | 必須 | どの表の変更か | `rules` |
+| `rule_id` | text | 必須 | 変更した行の番号（`table_name` の表の `id`） | `R-21` |
 | `operation` | text | 必須 | `insert`（追加）／`update`（変更）／`delete`（削除） | |
-| `snapshot` | jsonb | 必須 | 変更後のルールの中身（削除のときは削除前） | |
+| `snapshot` | jsonb | 必須 | 変更後の行の中身（削除のときは削除前） | |
 | `changed_at` | timestamptz | 必須 | 変えた日時 | |
 
 ---
