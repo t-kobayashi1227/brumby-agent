@@ -3,11 +3,13 @@
 export interface PageDef {
   href: string;
   title: string;
+  /** 架空のデータのモック。ナビには出さない（画面は残す。設計書 D27） */
+  mock?: true;
 }
 
 /** Every page in the prototype, in the order shown in the demo screen-jump menu. */
 export const pages: PageDef[] = [
-  { href: "/", title: "1. ログイン" },
+  { href: "/", title: "1. ログイン", mock: true },
   { href: "/dashboard", title: "2. ホーム" },
   { href: "/properties/new", title: "3. 新規物件登録" },
   { href: "/research", title: "4. 競合物件リサーチ" },
@@ -15,11 +17,11 @@ export const pages: PageDef[] = [
   { href: "/research/detail", title: "6. 競合物件リサーチ（詳細入力）" },
   { href: "/research/result", title: "7. AI分析結果（競合診断）" },
   { href: "/strategy", title: "8. 販売戦略提案" },
-  { href: "/monitor", title: "9. 販売モニター" },
-  { href: "/monitor/0", title: "10. 物件別モニター詳細" },
+  { href: "/monitor", title: "9. 販売モニター", mock: true },
+  { href: "/monitor/0", title: "10. 物件別モニター詳細", mock: true },
   { href: "/report", title: "11. レポート出力" },
-  { href: "/plan", title: "12. プラン・オプション" },
-  { href: "/notice", title: "お知らせ" },
+  { href: "/plan", title: "12. プラン・オプション", mock: true },
+  { href: "/notice", title: "お知らせ", mock: true },
   { href: "/rules", title: "ルール表（販売戦略の判断基準）" },
 ];
 
@@ -31,6 +33,7 @@ export function findPage(pathname: string): PageDef | undefined {
   return undefined;
 }
 
+/** サイドバー。モック（販売モニター・お知らせ・プラン・オプション）は出さない（設計書 D27） */
 export const navItems: { label: string; href: string }[] = [
   { label: "ホーム", href: "/dashboard" },
   { label: "物件一覧", href: "/dashboard#properties" },
@@ -38,10 +41,7 @@ export const navItems: { label: string; href: string }[] = [
   { label: "販売戦略", href: "/strategy" },
   { label: "ルール表", href: "/rules" },
   { label: "競合物件リサーチ", href: "/research" },
-  { label: "販売モニター", href: "/monitor" },
   { label: "レポート", href: "/report" },
-  { label: "お知らせ", href: "/notice" },
-  { label: "プラン・オプション", href: "/plan" },
 ];
 
 /** A nav item is active on its own page and on any page nested under it. */
