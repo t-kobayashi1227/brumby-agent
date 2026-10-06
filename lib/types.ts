@@ -26,6 +26,8 @@ export interface AnalysisParams {
   price_min_n: number;                  // 相場で必要な件数
   price_years: number;                  // 相場の期間（直近何年）
   target_age: [number, number];         // 狙う層の年齢（例：30〜49歳）
+  min_top_score: number;                // 1位の点がこれ未満なら、狙う層を絞り込まない（狙う層の設計.md 5章）
+  tie_margin: number;                   // 1位との差がこれ以内の候補は同点として併記する
 }
 
 export interface PropertyRow {
@@ -43,6 +45,7 @@ export interface PropertyRow {
   parking: number | null;
   access: string | null;
   features: string | null;
+  total_budget_man_yen: number | null;  // 利用者が入力した総予算（D15）。空ならルールの提案値
 }
 
 export interface VersionInfo {

@@ -6,6 +6,7 @@ import { futureAnalyzer } from "./future";
 import { hazardAnalyzer } from "./hazard";
 import { marketAnalyzer } from "./market";
 import { populationAnalyzer } from "./population";
+import type { AppealDef, CandidateDef } from "../rules/catalog";
 import { runRules, type Rule } from "../rules/engine";
 import { loadActiveVersions } from "./versions";
 
@@ -23,12 +24,14 @@ export function defaultParams(areaClass: PropertyRow["area_class"]): AnalysisPar
     price_min_n: 10,
     price_years: 3,
     target_age: [30, 49],
+    min_top_score: 2,
+    tie_margin: 0,
   };
 }
 
 export async function loadProperty(sql: Sql, propertyId: number): Promise<PropertyRow> {
   const [row] = await sql<PropertyRow[]>`
-    select id, name, property_type, price_man_yen, address, area_class, land_sqm, building_sqm, layout, parking, access, features,
+    select id, name, property_type, price_man_yen, address, area_class, land_sqm, building_sqm, layout, parking, access, features, total_budget_man_yen,
            extensions.st_x(geom) as lon, extensions.st_y(geom) as lat
     from properties where id = ${propertyId}
   `;
@@ -63,7 +66,13 @@ export async function runAnalysis(
     // ルールで判断して、判断カード（kind = decision）を足す（設計書 6.1）
     await sql`update analysis_runs set stage = 'rules' where id = ${runId}`;
     const rules = await sql<Rule[]>`select id, kind, condition, effect, note, enabled, version from rules order by id`;
-    facts.push(...runRules(rules, facts, property));
+    const candidates = await sql<CandidateDef[]>`
+      select id, label, description, property_types, sort_order, enabled, confidence from target_candidates order by sort_order, id
+    `;
+    const appeals = await sql<AppealDef[]>`
+      select id, label, description, needs_facts, property_types, sort_order, enabled from appeal_items order by sort_order, id
+    `;
+    facts.push(...runRules({ rules, candidates, appeals }, facts, property, params));
 
     await sql.begin(async (tx) => {
       for (const [i, f] of facts.entries()) {

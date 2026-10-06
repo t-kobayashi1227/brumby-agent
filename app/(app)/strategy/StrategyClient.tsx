@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import UnderlineTabs from "../../_components/UnderlineTabs";
 import { SourceNote } from "../../_components/Notes";
 import { SECTION_TITLE, type SectionKey } from "../../../lib/ai/schema";
-import { MEDIA, TARGETS } from "../../../lib/rules/catalog";
+import { MEDIA } from "../../../lib/rules/catalog";
 import { card, fieldLabel, tableHead, btnPrimary, btnSecondary, budgetButtonClass, emptyState } from "../../_lib/ui";
 import { simulateBudget } from "./actions";
 
@@ -219,7 +219,7 @@ export default function StrategyClient(props: StrategyClientProps) {
             {MEDIA.map((m) => (
               <div key={m.id} className="grid grid-cols-[1.2fr_1.3fr_1.8fr] gap-2 py-2.5 px-1 border-b border-divider text-[13px] text-body">
                 <div>{m.label}</div>
-                <div>{targets[0]?.label ?? TARGETS[0].label}</div>
+                <div>{targets[0]?.label ?? "—"}</div>
                 <div>{m.role}</div>
               </div>
             ))}

@@ -1,13 +1,20 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { MEDIA, TARGETS } from "../../../lib/rules/catalog";
+import { MEDIA } from "../../../lib/rules/catalog";
 import { FACT_OPTIONS, KIND_LABEL, factLabel, inputUnit, leafConditions, toInput } from "../../../lib/rules/describe";
 import type { Condition, Effect, Op, Rule } from "../../../lib/rules/engine";
+import { PROPERTY_TYPES } from "../../../lib/rules/describe";
 import { btnPrimary, fieldLabel, input } from "../../_lib/ui";
 import { deleteRule, saveRule, type ActionState } from "./actions";
 
 // ルールの追加・変更のフォーム（設計書 D14）。条件は「何を見るか」を一覧から選んで組み立てる
+// 狙う層の候補・訴求の素材は DB の表から選ぶ（D22・D23）
+
+export interface RuleFormOptions {
+  candidates: { id: string; label: string }[];
+  appeals: { id: string; label: string }[];
+}
 
 export interface RuleData {
   id: string;
@@ -20,7 +27,7 @@ export interface RuleData {
 
 interface Leaf {
   fact: string;
-  compare: "comparison" | "value";
+  compare: "comparison" | "value" | "contains";
   op: Op;
   value: string;
 }
@@ -32,6 +39,9 @@ const groups = [...new Set(FACT_OPTIONS.map((f) => f.group))];
 
 function toLeaf(c: Extract<Condition, { fact: string }>): Leaf {
   const unit = factLabel(c.fact).unit;
+  if (c.op === "contains" || typeof c.than === "string" && c.than !== "comparison") {
+    return { fact: c.fact, compare: "contains", op: "contains", value: String(c.than) };
+  }
   if (c.than === "comparison") {
     return { fact: c.fact, compare: "comparison", op: c.op === "<" || c.op === "<=" ? "<" : ">", value: String(Math.round(Math.abs(c.delta ?? 0) * 1000) / 10) };
   }
@@ -42,7 +52,10 @@ const emptyLeaf = (): Leaf => ({ fact: "target.households_with_under18_ratio", c
 
 function LeafFields({ index, leaf, onChange }: { index: number; leaf: Leaf; onChange: (leaf: Leaf) => void }) {
   const fact = factLabel(leaf.fact);
-  const compare = fact.comparable ? leaf.compare : "value";
+  const isText = fact.unit === "text";
+  const compare = isText ? "contains" : fact.comparable && leaf.compare === "comparison" ? "comparison" : "value";
+  const comparisonLabel = fact.comparisonLabel ?? "区・市の値";
+  const ratioLike = fact.unit === "ratio";
   return (
     <div className="grid gap-2 border border-line rounded-md p-3 bg-white">
       <div className="text-xs font-bold text-sub">条件{index + 1}</div>
@@ -61,12 +74,35 @@ function LeafFields({ index, leaf, onChange }: { index: number; leaf: Leaf; onCh
       <div className="flex flex-wrap items-end gap-2">
         <label className={`${fieldLabel} w-44`}>
           比べる相手
-          <select name={`c${index}_compare`} value={compare} onChange={(e) => onChange({ ...leaf, compare: e.target.value as Leaf["compare"], op: e.target.value === "comparison" ? ">" : ">=" })} className={select}>
-            {fact.comparable && <option value="comparison">区・市の値</option>}
-            <option value="value">決まった値</option>
+          <select name={`c${index}_compare`} value={compare} onChange={(e) => onChange({ ...leaf, compare: e.target.value as Leaf["compare"], op: e.target.value === "comparison" ? ">" : e.target.value === "contains" ? "contains" : ">=" })} className={select}>
+            {isText ? (
+              <option value="contains">言葉が入っているか</option>
+            ) : (
+              <>
+                {fact.comparable && <option value="comparison">{comparisonLabel}</option>}
+                <option value="value">決まった値</option>
+              </>
+            )}
           </select>
         </label>
-        {compare === "comparison" ? (
+        {compare === "contains" ? (
+          <>
+            <span className="text-[13px] text-body pb-2.5">に</span>
+            <input name={`c${index}_value`} type="text" value={leaf.value} onChange={(e) => onChange({ ...leaf, value: e.target.value })} required className={`${inline} w-40`} />
+            <span className="text-[13px] text-body pb-2.5">が入っている</span>
+          </>
+        ) : compare === "comparison" && !ratioLike ? (
+          <>
+            <input type="hidden" name={`c${index}_value`} value="0" />
+            <span className="text-[13px] text-body pb-2.5">より</span>
+            <select name={`c${index}_op`} value={leaf.op === "contains" ? ">=" : leaf.op} onChange={(e) => onChange({ ...leaf, op: e.target.value as Op })} className={`${inline} w-32`}>
+              <option value=">=">以上</option>
+              <option value=">">大きい</option>
+              <option value="<=">以下</option>
+              <option value="<">小さい</option>
+            </select>
+          </>
+        ) : compare === "comparison" ? (
           <>
             <span className="text-[13px] text-body pb-2.5">より</span>
             <input name={`c${index}_value`} type="number" step="0.1" min="0" value={leaf.value} onChange={(e) => onChange({ ...leaf, value: e.target.value })} required className={`${inline} w-24`} />
@@ -89,20 +125,23 @@ function LeafFields({ index, leaf, onChange }: { index: number; leaf: Leaf; onCh
           </>
         )}
       </div>
-      {compare === "comparison" && <div className="text-[11px] text-muted">例：3ポイント以上多い ＝ 区・市の値が20.0%なら、23.0%より多いとき</div>}
+      {compare === "comparison" && ratioLike && <div className="text-[11px] text-muted">例：3ポイント以上多い ＝ {comparisonLabel}が20.0%なら、23.0%より多いとき</div>}
     </div>
   );
 }
 
-function EffectFields({ kind, effect }: { kind: Rule["kind"]; effect?: Effect }) {
+function EffectFields({ kind, effect, options }: { kind: Rule["kind"]; effect?: Effect; options: RuleFormOptions }) {
   const e = (effect ?? {}) as Record<string, unknown>;
-  if (kind === "target_score") {
+  if (kind === "target_score" || kind === "appeal_score") {
+    const isTarget = kind === "target_score";
+    const list = isTarget ? options.candidates : options.appeals;
+    const current = String((isTarget ? e.candidate : e.appeal) ?? list[0]?.id ?? "");
     return (
       <div className="flex flex-wrap items-end gap-2">
         <label className={`${fieldLabel} flex-1 min-w-56`}>
-          狙う層
-          <select name="e_target" defaultValue={String(e.target ?? TARGETS[0].id)} className={select}>
-            {TARGETS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          {isTarget ? "狙う層の候補" : "訴求の素材"}
+          <select name={isTarget ? "e_candidate" : "e_appeal"} defaultValue={current} className={select}>
+            {list.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
         </label>
         <span className="text-[13px] text-body pb-2.5">に</span>
@@ -168,7 +207,7 @@ function Message({ state }: { state: ActionState }) {
 }
 
 /** rule があれば変更、なければ追加 */
-export default function RuleForm({ rule }: { rule?: RuleData }) {
+export default function RuleForm({ rule, options }: { rule?: RuleData; options: RuleFormOptions }) {
   const [state, formAction, pending] = useActionState(saveRule, {});
   const [kind, setKind] = useState<Rule["kind"]>(rule?.kind ?? "target_score");
   const initialLeaves = rule ? leafConditions(rule.condition).map(toLeaf) : [];
@@ -185,7 +224,7 @@ export default function RuleForm({ rule }: { rule?: RuleData }) {
         <label className={`${fieldLabel} max-w-72`}>
           ルールの種類
           <select name="kind" value={kind} onChange={(e) => setKind(e.target.value as Rule["kind"])} className={select}>
-            {(["target_score", "total_budget", "media_weight", "min_spend"] as const).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+            {(["target_score", "appeal_score", "total_budget", "media_weight", "min_spend"] as const).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
           </select>
         </label>
       )}
@@ -201,11 +240,20 @@ export default function RuleForm({ rule }: { rule?: RuleData }) {
         </label>
         {condMode !== "always" && <LeafFields index={0} leaf={leaves[0]} onChange={(l) => setLeaf(0, l)} />}
         {condMode === "2" && <LeafFields index={1} leaf={leaves[1]} onChange={(l) => setLeaf(1, l)} />}
+        <div className="flex flex-wrap items-center gap-3 text-[13px] text-body">
+          <span className={fieldLabel}>当てはめる物件種別（選ばなければ全部）</span>
+          {PROPERTY_TYPES.map((t) => (
+            <label key={t} className="flex gap-1 items-center">
+              <input type="checkbox" name="when_type" value={t} defaultChecked={rule?.condition.when?.property_type?.includes(t) ?? false} />
+              {t}
+            </label>
+          ))}
+        </div>
       </div>
 
       <div className="grid gap-1">
         <div className={fieldLabel}>効果（当てはまったとき）</div>
-        <EffectFields key={kind} kind={kind} effect={rule?.effect} />
+        <EffectFields key={kind} kind={kind} effect={rule?.effect} options={options} />
       </div>
 
       <label className={fieldLabel}>

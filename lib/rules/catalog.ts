@@ -1,10 +1,31 @@
-// 狙う層の候補と媒体の一覧（設計書 6.1「あらかじめ用意したリスト」）
-// 出発点はプロトタイプ（app/_lib/data.ts の targetList・mediaDefs）。BRUMBY様との打ち合わせで直していく
+// 狙う層の候補・訴求の素材の型と、媒体の一覧
+// 候補と素材はコードに書かず、DB の target_candidates・appeal_items の行にする（設計書 D22・D23、狙う層の設計.md）
+// 媒体の出発点はプロトタイプ（app/_lib/data.ts の mediaDefs）。BRUMBY様との打ち合わせで直していく
 
-export interface TargetDef {
+/** 狙う層の候補（target_candidates の1行） */
+export interface CandidateDef {
   id: string;
   label: string;
   description: string;
+  /** 対象の物件種別。null か空なら全部 */
+  property_types: string[] | null;
+  /** 同点のときは小さいほうを上にする */
+  sort_order: number;
+  enabled: boolean;
+  /** low：公開データでは根拠が弱い（「仮説」のラベルを付ける） */
+  confidence: "normal" | "low";
+}
+
+/** 訴求の素材（appeal_items の1行） */
+export interface AppealDef {
+  id: string;
+  label: string;
+  description: string;
+  /** 必要な事実カードの key（property.xxx は物件の入力）。1つでも取れていなければ選ばない */
+  needs_facts: string[];
+  property_types: string[] | null;
+  sort_order: number;
+  enabled: boolean;
 }
 
 export interface MediaDef {
@@ -13,12 +34,10 @@ export interface MediaDef {
   role: string;
 }
 
-/** 順位が同点のときは、この並び順で上にする */
-export const TARGETS: TargetDef[] = [
-  { id: "family", label: "30〜40代の子育てファミリー", description: "賃貸からの住み替え層。学校・駐車場・広さに関心" },
-  { id: "dinks", label: "20代後半〜30代前半の共働き夫婦", description: "利便性の高いエリアでの新築を検討。駅までの距離・通勤を重視" },
-  { id: "relocation", label: "周辺エリアの住み替え層", description: "今の住まいが手狭になったファミリー層。築10年以上の戸建・マンションから" },
-];
+/** 物件種別が対象に入るか（null・空は全部） */
+export function matchesPropertyType(types: string[] | null | undefined, propertyType: string) {
+  return !types || types.length === 0 || types.includes(propertyType);
+}
 
 export const MEDIA: MediaDef[] = [
   { id: "sns", label: "Instagram・Facebook広告", role: "30〜40代ファミリーへの認知拡大・見学予約への誘導" },

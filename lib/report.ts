@@ -1,6 +1,6 @@
 import type { Sql } from "./db";
-import { MEDIA, TARGETS } from "./rules/catalog";
-import type { Rule } from "./rules/engine";
+import { MEDIA } from "./rules/catalog";
+import type { Rule, TargetRankItem } from "./rules/engine";
 import type { NarrativeContent } from "./ai/schema";
 import type { FactStatus } from "./types";
 
@@ -70,15 +70,7 @@ export interface ReportData {
   competitors: ReportCompetitor[];
 }
 
-/** target_rank の basis.ranking の形（lib/rules/engine.ts runRules が作る） */
-export interface TargetRankItem {
-  rank: number;
-  id: string;
-  label: string;
-  description: string;
-  score: number;
-  rules: { id: string; version: number; note: string }[];
-}
+export type { TargetRankItem };
 
 /** decision.media.* の1媒体分（画面用にまとめた形） */
 export interface MediaItem {
@@ -261,8 +253,19 @@ export function areaStats(facts: ReportFact[]): AreaStat[] {
 export function targetRanking(facts: ReportFact[]): TargetRankItem[] {
   const f = findFact(facts, "decision.target_rank");
   const ranking = f?.basis?.ranking;
-  if (!Array.isArray(ranking)) return TARGETS.map((t, i) => ({ rank: i + 1, id: t.id, label: t.label, description: t.description, score: 0, rules: [] }));
-  return ranking as TargetRankItem[];
+  if (!Array.isArray(ranking)) return [];
+  // 2026-10-06より前の分析には max・confidence・available がない
+  return (ranking as Partial<TargetRankItem>[]).map((t) => ({
+    rank: t.rank ?? 0,
+    id: t.id ?? "",
+    label: t.label ?? "",
+    description: t.description ?? "",
+    score: t.score ?? 0,
+    max: t.max ?? 0,
+    rules: t.rules ?? [],
+    confidence: t.confidence ?? "normal",
+    available: t.available ?? true,
+  }));
 }
 
 /** decision.media.* を画面用にまとめる */

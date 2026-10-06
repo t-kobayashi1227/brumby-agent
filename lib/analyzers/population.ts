@@ -22,10 +22,19 @@ function ageKeys([from, to]: [number, number]): string[] {
   return keys;
 }
 
+/** 狙う層の候補のルールで使う、決まった年齢帯（狙う層の設計.md）。20〜39歳は共働き夫婦の代わり（D21） */
+const FIXED_AGES: Ratio[] = [
+  { key: "target.age_20_39_ratio", label: "20〜39歳の人", numerator: ageKeys([20, 39]), denominator: "age_total" },
+  { key: "target.age_65plus_ratio", label: "65歳以上の人", numerator: ["age_65plus"], denominator: "age_total" },
+];
+
 function ratios(ctx: AnalyzerContext): Ratio[] {
   const [from, to] = ctx.params.target_age;
+  const targetKey = `target.age_${from}_${to}_ratio`;
   return [
-    { key: `target.age_${from}_${to}_ratio`, label: `${from}〜${to}歳の人`, numerator: ageKeys(ctx.params.target_age), denominator: "age_total" },
+    { key: targetKey, label: `${from}〜${to}歳の人`, numerator: ageKeys(ctx.params.target_age), denominator: "age_total" },
+    // 狙う層の年齢を20〜39歳にしたときは、同じカードを二重に作らない
+    ...FIXED_AGES.filter((r) => r.key !== targetKey),
     { key: "target.households_with_under18_ratio", label: "18歳未満のいる世帯", numerator: ["hh_with_under18"], denominator: "hh_general" },
     { key: "target.couple_children_ratio", label: "夫婦と子供から成る世帯", numerator: ["hh_couple_children"], denominator: "hh_general" },
     { key: "target.private_rented_ratio", label: "民営借家に住む世帯", numerator: ["tenure_private_rented"], denominator: "tenure_total" },
