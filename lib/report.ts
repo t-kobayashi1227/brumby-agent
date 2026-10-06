@@ -19,6 +19,7 @@ export interface ReportFact {
   scope: Record<string, unknown> | null;
   basis: Record<string, unknown> | null;
   attribution: string | null;
+  datasetVersionIds: number[];
 }
 
 export interface ReportProperty {
@@ -53,12 +54,17 @@ export interface ReportNarrative {
   attempts: number;
   content: NarrativeContent;
   createdAt: Date;
+  promptVersion: string;
+  /** 段落ごとの検証の結果（lib/ai/validate.ts）。要確認の段落に印を付けるため */
+  validation: { ok: boolean; paragraphs: { sectionKey: string; paragraphKey: string; ok: boolean }[] } | null;
 }
 
 export interface ReportRun {
   id: number;
   createdAt: Date;
   params: Record<string, unknown>;
+  /** 成功したが注意がある場合（AIの文章を作れなかった など） */
+  error: string | null;
 }
 
 export interface ReportData {
@@ -111,19 +117,23 @@ export async function listProperties(sql: Sql): Promise<PropertySummary[]> {
   return rows.map((r) => ({ id: Number(r.id), name: r.name, priceManYen: r.price_man_yen, lastAnalyzedAt: r.last_analyzed_at, insufficientCount: Number(r.insufficient_count ?? 0) }));
 }
 
-export async function loadReport(sql: Sql, propertyId: number): Promise<ReportData | null> {
+/** 物件の最新の成功した分析を読む。runId を渡すと、その実行を読む（印刷・比較用。物件の実行でなければ null） */
+export async function loadReport(sql: Sql, propertyId: number, runId?: number): Promise<ReportData | null> {
   const [property] = await sql<
     { id: number; name: string; property_type: string; price_man_yen: number | null; address: string; layout: string | null; land_sqm: string | null; building_sqm: string | null; parking: number | null; access: string | null; features: string | null }[]
   >`select id, name, property_type, price_man_yen, address, layout, land_sqm, building_sqm, parking, access, features from properties where id = ${propertyId}`;
   if (!property) return null;
 
-  const [run] = await sql<{ id: number; created_at: Date; params: Record<string, unknown> }[]>`
-    select id, created_at, params from analysis_runs where property_id = ${propertyId} and status = 'succeeded' order by id desc limit 1
+  const [run] = await sql<{ id: number; created_at: Date; params: Record<string, unknown>; error: string | null }[]>`
+    select id, created_at, params, error from analysis_runs
+    where property_id = ${propertyId} and status = 'succeeded' ${runId ? sql`and id = ${runId}` : sql``}
+    order by id desc limit 1
   `;
+  if (!run && runId) return null;
   if (!run) {
     return {
       property: toReportProperty(property),
-      run: { id: 0, createdAt: new Date(0), params: {} },
+      run: { id: 0, createdAt: new Date(0), params: {}, error: null },
       facts: [],
       narrative: null,
       rules: [],
@@ -133,22 +143,30 @@ export async function loadReport(sql: Sql, propertyId: number): Promise<ReportDa
 
   const [facts, narrativeRows, rules, competitors] = await Promise.all([
     sql<
-      { seq: number; key: string; kind: "fact" | "decision"; value: number | null; value_text: string | null; unit: string | null; comparison: number | null; status: FactStatus; scope: Record<string, unknown> | null; basis: Record<string, unknown> | null; attribution: string | null }[]
-    >`select seq, key, kind, value, value_text, unit, comparison, status, scope, basis, attribution from facts where run_id = ${run.id} order by seq`,
-    sql<{ model: string; status: "ok" | "needs_review" | "failed"; attempts: number; content: NarrativeContent; created_at: Date }[]>`
-      select model, status, attempts, content, created_at from narratives where run_id = ${run.id}
+      { seq: number; key: string; kind: "fact" | "decision"; value: number | null; value_text: string | null; unit: string | null; comparison: number | null; status: FactStatus; scope: Record<string, unknown> | null; basis: Record<string, unknown> | null; attribution: string | null; dataset_version_ids: string[] }[]
+    >`select seq, key, kind, value, value_text, unit, comparison, status, scope, basis, attribution, dataset_version_ids from facts where run_id = ${run.id} order by seq`,
+    sql<{ model: string; status: "ok" | "needs_review" | "failed"; attempts: number; content: NarrativeContent; created_at: Date; prompt_version: string; validation: ReportNarrative["validation"] }[]>`
+      select model, status, attempts, content, created_at, prompt_version, validation from narratives where run_id = ${run.id}
     `,
     sql<Rule[]>`select id, kind, condition, effect, note, enabled, version from rules order by id`,
     loadCompetitors(sql, propertyId),
   ]);
 
   const narrative = narrativeRows[0]
-    ? { model: narrativeRows[0].model, status: narrativeRows[0].status, attempts: narrativeRows[0].attempts, content: narrativeRows[0].content, createdAt: narrativeRows[0].created_at }
+    ? {
+        model: narrativeRows[0].model,
+        status: narrativeRows[0].status,
+        attempts: narrativeRows[0].attempts,
+        content: narrativeRows[0].content,
+        createdAt: narrativeRows[0].created_at,
+        promptVersion: narrativeRows[0].prompt_version,
+        validation: narrativeRows[0].validation,
+      }
     : null;
 
   return {
     property: toReportProperty(property),
-    run: { id: Number(run.id), createdAt: run.created_at, params: run.params },
+    run: { id: Number(run.id), createdAt: run.created_at, params: run.params, error: run.error },
     facts: facts.map((f) => ({
       seq: f.seq,
       key: f.key,
@@ -161,6 +179,7 @@ export async function loadReport(sql: Sql, propertyId: number): Promise<ReportDa
       scope: f.scope,
       basis: f.basis,
       attribution: f.attribution,
+      datasetVersionIds: f.dataset_version_ids.map(Number),
     })),
     narrative,
     rules,
@@ -327,4 +346,22 @@ export async function loadDealCases(sql: Sql, facts: ReportFact[], limit = 12): 
     landSqm: r.area_sqm === null ? null : Number(r.area_sqm),
     buildingSqm: r.total_floor_area_sqm === null ? null : Number(r.total_floor_area_sqm),
   }));
+}
+
+export interface DataSource {
+  versionId: number;
+  attribution: string;
+  fetchedAt: Date;
+  publishedAt: Date | null;
+  period: string | null;
+}
+
+/** カードが使った公開データの版（出典と取得日。設計書 D12・D27） */
+export async function loadDataSources(sql: Sql, facts: ReportFact[]): Promise<DataSource[]> {
+  const ids = [...new Set(facts.flatMap((f) => f.datasetVersionIds))];
+  if (ids.length === 0) return [];
+  const rows = await sql<{ id: number; attribution: string; fetched_at: Date; source_published_at: Date | null; period: string | null }[]>`
+    select id, attribution, fetched_at, source_published_at, period from dataset_versions where id = any(${ids}) order by attribution, id
+  `;
+  return rows.map((r) => ({ versionId: Number(r.id), attribution: r.attribution, fetchedAt: r.fetched_at, publishedAt: r.source_published_at, period: r.period }));
 }

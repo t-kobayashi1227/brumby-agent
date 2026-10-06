@@ -8,7 +8,7 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <Header />
-        <main className="flex-1 p-7 overflow-auto">{children}</main>
+        <main className="flex-1 p-7 overflow-auto print:p-0 print:overflow-visible">{children}</main>
       </div>
     </div>
   );

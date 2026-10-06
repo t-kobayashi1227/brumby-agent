@@ -10,7 +10,7 @@ export default function PrototypeNav() {
   const page = findPage(usePathname());
   const current = page && !page.mock && pages.some((p) => p.href === page.href) ? page.href : "";
   return (
-    <div className="bg-night text-[#c9d3e3] px-5 py-1.5 flex items-center gap-3.5 text-xs flex-wrap">
+    <div className="print:hidden bg-night text-[#c9d3e3] px-5 py-1.5 flex items-center gap-3.5 text-xs flex-wrap">
       <span className="opacity-70">プロトタイプ画面ジャンプ:</span>
       <select
         value={current}

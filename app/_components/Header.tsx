@@ -7,7 +7,7 @@ export default function Header() {
   const page = findPage(usePathname());
   const title = page?.title ?? "";
   return (
-    <div className="h-14 shrink-0 bg-white border-b border-line flex items-center px-6 justify-between">
+    <div className="print:hidden h-14 shrink-0 bg-white border-b border-line flex items-center px-6 justify-between">
       <div className="flex items-center gap-2.5">
         <div className="text-base font-bold text-ink">{title}</div>
         {page?.mock && (
