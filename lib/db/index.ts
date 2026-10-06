@@ -1,7 +1,8 @@
 import postgres from "postgres";
 
 // Supabase（Postgres＋PostGIS）への接続。Next.jsのサーバー側と scripts/ の両方から使う
-// Cloudflare Workers（Hyperdrive）でも動かすため、Node.js専用の機能は使わない
+// Vercel からはコネクションプーラー（Transaction mode）経由でつなぐ。プーラーはプリペアドステートメントを
+// 引き継げないので prepare: false にする（設計書 D5）
 
 export type Sql = postgres.Sql;
 
@@ -16,7 +17,7 @@ export function getSql(): Sql {
     throw new Error("DATABASE_URL が設定されていません（.env.local を確認してください）");
   }
 
-  const sql = postgres(url, { max: 5 });
+  const sql = postgres(url, { max: 5, prepare: false });
   globalForDb.brumbySql = sql;
   return sql;
 }

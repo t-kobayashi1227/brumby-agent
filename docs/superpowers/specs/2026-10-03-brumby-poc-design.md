@@ -39,7 +39,7 @@
 | D2 | 言語はTypeScriptに統一。Pythonは使わない | 地理の計算はPostGISで行う |
 | D3 | データベースはSupabase（Postgres＋PostGIS、東京リージョン）。PoC用の共有プロジェクトを1つ作る | 共同開発で同じデータを使うため。将来の認証機能やファイル保存にも使える |
 | D4 | スキーマは `supabase/migrations/` でGit管理する。Studioでの直接変更はしない（ルール表、候補表、訴求表、`district_manual` のデータ編集は除く） | 共同開発で、誰が何を変えたかを追えるようにする |
-| D5 | デプロイ先はVercel（関数のリージョンは東京 hnd1）。Supabaseへはコネクションプーラー（Transaction mode）経由で接続し、postgres.jsは `prepare: false`。アクセス制限はmiddlewareのBasic認証（共通パスワードは環境変数）。`service_role` キーはVercelの環境変数だけに置き、ブラウザには渡さない | D1（Cloudflare）ではPostGISが使えず、PoCは期間が短くCloudflareの設定に時間を使えないため。社内PDFの「Cloudflareで運用知見を得る」目的はPoCでは満たさない（社内に報告） |
+| D5 | デプロイ先はVercel（関数のリージョンは東京 hnd1）。Supabaseへはコネクションプーラー（Transaction mode）経由で接続し、postgres.jsは `prepare: false`。アクセス制限は `proxy.ts`（Next.js 16で middleware から改名）のBasic認証（共通パスワードは環境変数）。トップ `/` は `/dashboard` に転送する。`service_role` キーはVercelの環境変数だけに置き、ブラウザには渡さない | D1（Cloudflare）ではPostGISが使えず、PoCは期間が短くCloudflareの設定に時間を使えないため。社内PDFの「Cloudflareで運用知見を得る」目的はPoCでは満たさない（社内に報告） |
 | D6 | 公開データは「先に取り込む」を基本にし、データの種類で持ち方を分ける（4章） | データの再現性、集計の柔軟さ、外部の障害に左右されないため |
 | D7 | エリアの単位は項目ごとに使い分ける（狙う層＝半径、相場＝町丁目から段階的に広げる、訴求＝学区＋距離） | 狙う層の範囲を、広告の配信範囲にそのまま使えるようにする |
 | D8 | 集計の結果は「事実カード」として保存し、AIとレポートはカードの数字だけを使う | 出典と根拠を表示するため、また数字の検証をできるようにするため |
@@ -95,7 +95,7 @@
 ```
 app/                     既存のプロトタイプ（画面）
 app/_lib/data.ts         既存の仮データ。本物のデータに置き換えたら順に削除する
-middleware.ts            Basic認証（D5）
+proxy.ts                 Basic認証（D5。Next.js 16 の middleware）
 lib/db/                  DB接続（postgres.js、プーラー経由）
 lib/analyzers/           集計の部品（物件と条件を受け取り、事実カードを返す）
 lib/rules/               ルールの評価エンジン（狙う層・訴求・予算配分）
@@ -106,7 +106,7 @@ supabase/migrations/     スキーマ
 docs/                    設計書ほか
 ```
 - 既存のNext.jsは 16.3.6。実装の前に `node_modules/next/dist/docs/` を確認する（AGENTS.md）。
-- Next.js 16では `middleware.ts` が `proxy.ts` に改名されている可能性がある。Basic認証の実装の前に、同梱のドキュメントでファイル名を確認する。
+- Next.js 16では `middleware.ts` が `proxy.ts` に改名された（同梱のドキュメントで確認済み）。`proxy` は Node.js で動き、matcher を付けないので `/api`・静的ファイル・Server Actions を含むすべてのリクエストを守る。
 
 ---
 

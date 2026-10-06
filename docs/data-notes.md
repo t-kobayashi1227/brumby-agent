@@ -29,6 +29,14 @@ BRUMBY PoCのデータまわり（DB、公開データ、取り込み）の仕�
 | `ESTAT_APP_ID` | e-StatのアプリケーションID |
 | `SUPABASE_URL` | Storageへの生データの保存 |
 | `SUPABASE_SECRET_KEY` | 同上。**すべてのデータを操作できる強いキー**。メンバーとも共有しない |
+| `ANTHROPIC_API_KEY` | AIの文章の生成（`lib/ai/`） |
+| `BASIC_AUTH_PASSWORD` | Basic認証の共通パスワード（`proxy.ts`、設計書 D5）。未設定だと `next dev` 以外では 503 で止まる |
+| `BASIC_AUTH_USER` | Basic認証のユーザー名（省略時は `brumby`） |
+
+### Vercel の環境変数（設計書 D5）
+- 上の表のうち、画面で使う `DATABASE_URL`・`ANTHROPIC_API_KEY`・`BASIC_AUTH_PASSWORD`（・`BASIC_AUTH_USER`）を設定する。取り込み用のキー（`REINFOLIB_API_KEY` など）と `SUPABASE_SECRET_KEY` は、画面で使うまで置かない
+- `DATABASE_URL` は **Transaction pooler（ポート 6543）** の接続文字列にする。関数ごとに接続するため。`lib/db/` は `prepare: false` でつなぐ
+- 関数のリージョンは東京（`vercel.json` の `hnd1`）
 
 ---
 
