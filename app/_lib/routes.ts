@@ -13,8 +13,7 @@ export const pages: PageDef[] = [
   { href: "/dashboard", title: "2. ホーム" },
   { href: "/properties/new", title: "3. 新規物件登録" },
   { href: "/research", title: "4. 競合物件リサーチ" },
-  { href: "/research/input", title: "5. 競合物件リサーチ（入力）" },
-  { href: "/research/detail", title: "6. 競合物件リサーチ（詳細入力）" },
+  { href: "/research/detail", title: "6. 競合物件リサーチ（競合物件の入力）" },
   { href: "/research/result", title: "7. AI分析結果（競合診断）" },
   { href: "/strategy", title: "8. 販売戦略提案" },
   { href: "/monitor", title: "9. 販売モニター", mock: true },
@@ -50,9 +49,9 @@ export function isNavActive(href: string, pathname: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+/** 競合物件リサーチの段階。検索結果の件数の入力（旧 /research/input）は保存先がないので外した */
 export const researchSteps: { num: number; label: string; hrefs: string[] }[] = [
   { num: 1, label: "検索条件の確認", hrefs: ["/research"] },
-  { num: 2, label: "検索・入力", hrefs: ["/research/input"] },
-  { num: 3, label: "競合物件", hrefs: ["/research/detail"] },
-  { num: 4, label: "AI分析", hrefs: ["/research/result"] },
+  { num: 2, label: "競合物件の入力", hrefs: ["/research/detail"] },
+  { num: 3, label: "AI分析", hrefs: ["/research/result"] },
 ];

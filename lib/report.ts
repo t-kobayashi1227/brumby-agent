@@ -46,6 +46,10 @@ export interface ReportCompetitor {
   walkMin: number | null;
   parking: number | null;
   features: string | null;
+  /** どこで・いつ確かめたか（D30） */
+  sourceType: "portal" | "seen" | "other" | null;
+  sourceSite: string | null;
+  confirmedOn: string | null;
 }
 
 export interface ReportNarrative {
@@ -189,8 +193,8 @@ export async function loadReport(sql: Sql, propertyId: number, runId?: number): 
 
 async function loadCompetitors(sql: Sql, propertyId: number): Promise<ReportCompetitor[]> {
   const rows = await sql<
-    { position: number; price_man_yen: number | null; location: string | null; land_sqm: string | null; building_sqm: string | null; layout: string | null; walk_min: number | null; parking: number | null; features: string | null }[]
-  >`select position, price_man_yen, location, land_sqm, building_sqm, layout, walk_min, parking, features from competitors where property_id = ${propertyId} order by position`;
+    { position: number; price_man_yen: number | null; location: string | null; land_sqm: string | null; building_sqm: string | null; layout: string | null; walk_min: number | null; parking: number | null; features: string | null; source_type: ReportCompetitor["sourceType"]; source_site: string | null; confirmed_on: Date | null }[]
+  >`select position, price_man_yen, location, land_sqm, building_sqm, layout, walk_min, parking, features, source_type, source_site, confirmed_on from competitors where property_id = ${propertyId} order by position`;
   return rows.map((c) => ({
     position: c.position,
     priceManYen: c.price_man_yen,
@@ -201,6 +205,9 @@ async function loadCompetitors(sql: Sql, propertyId: number): Promise<ReportComp
     walkMin: c.walk_min,
     parking: c.parking,
     features: c.features,
+    sourceType: c.source_type,
+    sourceSite: c.source_site,
+    confirmedOn: c.confirmed_on ? new Date(c.confirmed_on).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" }) : null,
   }));
 }
 
@@ -365,3 +372,4 @@ export async function loadDataSources(sql: Sql, facts: ReportFact[]): Promise<Da
   `;
   return rows.map((r) => ({ versionId: Number(r.id), attribution: r.attribution, fetchedAt: r.fetched_at, publishedAt: r.source_published_at, period: r.period }));
 }
+

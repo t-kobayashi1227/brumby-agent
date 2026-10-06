@@ -13,9 +13,16 @@ interface Competitor {
   walk_min: number | null;
   parking: number | null;
   features: string | null;
+  source_type: "portal" | "seen" | "other" | null;
+  source_site: string | null;
+  confirmed_on: string | null;
 }
 
-const ATTRIBUTION = "競合物件は手入力（ポータルサイトなどで確認したもの）";
+/** 出典：手入力で、どこで・いつ確かめたか（D30）。例：競合物件は手入力（1件目 SUUMO・2026-10-05確認 ／ …） */
+function attributionOf(rows: Competitor[]) {
+  const where = (c: Competitor) => c.source_site ?? (c.source_type === "seen" ? "現地などで見かけた" : c.source_type === "portal" ? "ポータルサイト" : "出どころ未入力");
+  return `競合物件は手入力（${rows.map((c) => `${c.position}件目 ${where(c)}${c.confirmed_on ? `・${c.confirmed_on}確認` : ""}`).join(" ／ ")}）`;
+}
 const average = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
 const signed = (x: number) => `${x >= 0 ? "+" : "−"}${Math.abs(x * 100).toFixed(1)}%`;
@@ -27,13 +34,14 @@ export const competitorsAnalyzer: Analyzer = {
     const scope = { type: "manual", max: 3 };
     const rows = await ctx.sql<Competitor[]>`
       select position, price_man_yen, location, land_sqm::float8 as land_sqm, building_sqm::float8 as building_sqm,
-             layout, walk_min, parking, features
+             layout, walk_min, parking, features, source_type, source_site, to_char(confirmed_on, 'YYYY-MM-DD') as confirmed_on
       from competitors where property_id = ${p.id} order by position
     `;
     if (rows.length === 0) {
       return [{ key: "competitor.price_gap", status: "not_available", scope, basis: { reason: "競合物件が入力されていません" }, datasetVersionIds: [] }];
     }
     const facts: FactDraft[] = [];
+    const ATTRIBUTION = attributionOf(rows);
     const list = rows.map((c) => ({ ...c, land_sqm: c.land_sqm === null ? null : Number(c.land_sqm), building_sqm: c.building_sqm === null ? null : Number(c.building_sqm) }));
 
     // 価格の差：物件の価格 ÷ 競合の平均 − 1

@@ -1,5 +1,8 @@
 "use client";
 
+import { competitorSource } from "../../../../lib/competitor-source";
+import type { ReportCompetitor } from "../../../../lib/report";
+
 import { useState } from "react";
 import Link from "next/link";
 import UnderlineTabs from "../../../_components/UnderlineTabs";
@@ -8,17 +11,7 @@ import { SourceNote } from "../../../_components/Notes";
 import { aiResultTabDefs, formatNumber } from "../../../_lib/data";
 import { card, btnPrimary, btnSecondary, statBox, emptyState } from "../../../_lib/ui";
 
-interface Competitor {
-  position: number;
-  priceManYen: number | null;
-  location: string | null;
-  landSqm: number | null;
-  buildingSqm: number | null;
-  layout: string | null;
-  walkMin: number | null;
-  parking: number | null;
-  features: string | null;
-}
+type Competitor = ReportCompetitor;
 
 interface AreaStat { label: string; value: string; sub: string }
 interface NearbyFacility { label: string; name: string; walkMin: number; distanceM: number }
@@ -100,7 +93,7 @@ export default function ResearchResultClient(props: ResearchResultClientProps) {
             狙う層・広告予算配分・訴求ポイントの詳しい分析は、AIの文章としてまとめています。
           </div>
           <SourceNote className="mb-4">
-            競合物件の入力（{surveyDate}調査）／{mlitSource}
+            競合物件の手入力／{mlitSource}
           </SourceNote>
           <Link href="/strategy" className={btnPrimary}>
             販売戦略（AIの分析）を見る →
@@ -161,7 +154,7 @@ export default function ResearchResultClient(props: ResearchResultClientProps) {
                   <div>{c.walkMin ?? "―"}分</div>
                 </div>
               ))}
-              <SourceNote className="mt-auto pt-1.5">競合物件の入力（{surveyDate}）</SourceNote>
+              <SourceNote className="mt-auto pt-1.5">競合物件の手入力（{competitors.map((c) => competitorSource(c)).join("／")}）</SourceNote>
             </div>
           </div>
         </div>
@@ -188,11 +181,12 @@ export default function ResearchResultClient(props: ResearchResultClientProps) {
                   {!!c.parking && <div className="text-xs text-body">駐車場{c.parking}台</div>}
                   <div className="text-xs text-muted mt-1">{c.location}</div>
                   {c.features && <div className="text-[11px] text-muted mt-0.5">{c.features}</div>}
+                  <div className="text-[10px] text-muted mt-1.5">参照：{competitorSource(c)}</div>
                 </div>
               ))}
             </div>
           )}
-          <SourceNote className="mt-4">競合物件の入力（{surveyDate}）</SourceNote>
+          <SourceNote className="mt-4">競合物件の手入力（ポータルサイトなどで確認。確認日は各物件に表示）</SourceNote>
         </div>
       )}
 
