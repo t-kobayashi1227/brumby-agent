@@ -4,6 +4,8 @@ import { CENSUS_SOURCE, MLIT_SOURCE } from "../../_lib/data";
 import { emptyState } from "../../_lib/ui";
 import StrategyClient from "./StrategyClient";
 import AnalysisRunner from "./AnalysisRunner";
+import EvaluationPanel from "./EvaluationPanel";
+import type { EvaluationRow } from "./evaluation";
 
 // 販売戦略レポート（設計書 7章）：最新の分析結果（カード・判断カード・AIの文章）をそのまま見せる
 // ?property=<id> で物件を切り替える（プロトタイプにはまだ物件選択の導線がないため、省略時は1）
@@ -29,6 +31,20 @@ export default async function StrategyPage({ searchParams }: { searchParams: Sea
   const budgetSource = source === "input" || source === "rule" ? source : null;
   const budgetOptions = [...new Set([...totalBudgetOptions(report.rules), ...(totalManYen !== null ? [totalManYen] : [])])].sort((a, b) => a - b);
 
+  // 評価（D18）：この実行の文章と、付けられた評価
+  const [nar] = hasRun
+    ? await sql<{ id: number; validation: { paragraphs?: { ok: boolean }[] } | null }[]>`select id, validation from narratives where run_id = ${report.run.id}`
+    : [];
+  const evaluations = nar
+    ? (
+        await sql<{ answer_key: string | null; criterion: string; score: number; memo: string | null; evaluator: string | null; created_at: Date }[]>`
+          select answer_key, criterion, score, memo, evaluator, created_at from evaluations where narrative_id = ${nar.id} order by created_at
+        `
+      ).map((e): EvaluationRow => ({ answerKey: e.answer_key, criterion: e.criterion, score: e.score, memo: e.memo, evaluator: e.evaluator, createdAt: e.created_at.toISOString() }))
+    : [];
+  const paragraphs = nar?.validation?.paragraphs ?? [];
+  const passRate = paragraphs.length ? { ok: paragraphs.filter((p) => p.ok).length, total: paragraphs.length } : null;
+
   const lastRadius = typeof report.run.params.radius_m === "number" ? report.run.params.radius_m : null;
 
   return (
@@ -50,6 +66,7 @@ export default async function StrategyPage({ searchParams }: { searchParams: Sea
         censusSource={CENSUS_SOURCE}
         mlitSource={MLIT_SOURCE}
       />
+      {hasRun && <EvaluationPanel narrativeId={nar ? Number(nar.id) : null} runId={report.run.id} passRate={passRate} evaluations={evaluations} />}
     </>
   );
 }

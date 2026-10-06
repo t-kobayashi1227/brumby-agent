@@ -5,6 +5,8 @@ import type { FactDraft, PropertyRow } from "../../../lib/types";
 import { simulateMediaAllocation, type MediaAllocation, type Rule } from "../../../lib/rules/engine";
 import { advanceRun, startRun, type RunProgress } from "../../../lib/analyzers/stages";
 import { RADIUS_CHOICES } from "./radius";
+import { ANSWERS, PER_ANSWER, PER_PROPERTY } from "./evaluation";
+import { revalidatePath } from "next/cache";
 
 /**
  * 分析を始める（設計書 D34）。同じ物件で進行中の実行があれば、それを返す（連打しても二重に動かない）
@@ -60,4 +62,52 @@ export async function simulateBudget(propertyId: number, totalManYen: number): P
   } as unknown as PropertyRow;
 
   return simulateMediaAllocation(rules, factDrafts, propertyRow, totalManYen);
+}
+
+export interface EvaluationState {
+  ok?: string;
+  error?: string;
+}
+
+/**
+ * 評価を保存する（設計書 D18・10章）。同じ人・同じ答え・同じ観点は上書きする（evaluations_one_per_evaluator）
+ * 点を空にした欄は保存しない（前に付けた点は残る）
+ */
+export async function saveEvaluation(_prev: EvaluationState, formData: FormData): Promise<EvaluationState> {
+  try {
+    const narrativeId = Number(formData.get("narrative_id"));
+    if (!Number.isInteger(narrativeId) || narrativeId <= 0) throw new Error("評価する文章がありません");
+    const evaluator = String(formData.get("evaluator") ?? "").trim();
+    if (!evaluator) throw new Error("評価した人の名前を入れてください");
+
+    const cells = [
+      ...ANSWERS.flatMap((a) => PER_ANSWER.map((c) => ({ answerKey: a.key as string | null, criterion: c.key as string }))),
+      ...PER_PROPERTY.map((c) => ({ answerKey: null, criterion: c.key as string })),
+    ];
+    const rows = cells.flatMap(({ answerKey, criterion }) => {
+      const raw = String(formData.get(`score|${answerKey ?? "-"}|${criterion}`) ?? "");
+      if (raw === "") return [];
+      const score = Number(raw);
+      if (!Number.isInteger(score) || score < 1 || score > 5) throw new Error("点は1〜5で選んでください");
+      const memo = String(formData.get(`memo|${answerKey ?? "-"}|${criterion}`) ?? "").trim() || null;
+      return [{ answerKey, criterion, score, memo }];
+    });
+    if (rows.length === 0) throw new Error("点を1つ以上選んでください");
+
+    const sql = getSql();
+    await sql.begin(async (tx) => {
+      for (const r of rows) {
+        await tx`
+          insert into evaluations (narrative_id, answer_key, criterion, score, memo, evaluator)
+          values (${narrativeId}, ${r.answerKey}, ${r.criterion}, ${r.score}, ${r.memo}, ${evaluator})
+          on conflict on constraint evaluations_one_per_evaluator
+          do update set score = excluded.score, memo = excluded.memo, created_at = now()
+        `;
+      }
+    });
+    revalidatePath("/strategy");
+    return { ok: `${rows.length}件の評価を保存しました（${evaluator}）` };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
 }
