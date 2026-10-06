@@ -70,6 +70,7 @@ export default function AnalysisRunner({ propertyId, lastRadius }: { propertyId:
           <div className="text-[11px] font-normal text-muted mt-0.5">
             条件を変えて実行すると、新しい結果として残ります（前の結果は消えません）。
             <Link href={`/properties/${propertyId}`} className="text-brand underline ml-1">物件の情報・位置・総予算を直す</Link>
+            <Link href={`/strategy/compare?property=${propertyId}`} className="text-brand underline ml-3">前回の結果と比べる</Link>
           </div>
         </div>
         <label className={`${fieldLabel} w-48`}>
@@ -117,6 +118,7 @@ export default function AnalysisRunner({ propertyId, lastRadius }: { propertyId:
       {progress?.status === "succeeded" && (
         <div className="mt-3 text-xs text-[#157347]">
           実行 {progress.runId} が終わりました。{progress.error ? `（注意：${progress.error}）` : ""}
+          <Link href={`/strategy/compare?property=${propertyId}&b=${progress.runId}`} className="text-brand underline ml-2">前回の結果と比べる</Link>
         </div>
       )}
       {progress?.status === "failed" && <div className="mt-3 text-xs text-[#b91c1c]">実行 {progress.runId} が失敗しました：{progress.error}</div>}

@@ -16,6 +16,7 @@ export const pages: PageDef[] = [
   { href: "/research/detail", title: "6. 競合物件リサーチ（競合物件の入力）" },
   { href: "/research/result", title: "7. AI分析結果（競合診断）" },
   { href: "/strategy", title: "8. 販売戦略提案" },
+  { href: "/strategy/compare", title: "販売戦略（前回の結果との比較）" },
   { href: "/monitor", title: "9. 販売モニター", mock: true },
   { href: "/monitor/0", title: "10. 物件別モニター詳細", mock: true },
   { href: "/report", title: "11. レポート出力" },

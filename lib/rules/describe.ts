@@ -144,3 +144,24 @@ export function leafConditions(condition: Condition): Extract<Condition, { fact:
   if ("all" in condition) return condition.all.flatMap(leafConditions);
   return [condition];
 }
+
+/** カードの日本語の名前（条件の一覧にないカードも含む）。画面・レポートで key の代わりに出す */
+export function cardName(key: string) {
+  const known = factLabel(key);
+  if (known.group !== "その他") return known.label;
+  const names: Record<string, string> = {
+    "hazard.flood": "洪水の浸水想定",
+    "hazard.landslide": "土砂災害警戒区域",
+    "hazard.liquefaction": "液状化の傾向",
+    "facility.elementary_district": "小学校区",
+    "facility.junior_high_district": "中学校区",
+    "market.price_median": "周りの取引価格（過去の取引・成約価格）の中央値",
+    "market.unit_price_median": "土地の1㎡あたりの取引価格の中央値",
+    "market.recent_build_price_median": "築5年以内の取引価格の中央値",
+    "land.nearest_residential_price": "最寄りの住宅地の地価",
+    "competitor.unit_price_gap": "面積あたりの価格と競合の差",
+    "competitor.features": "競合物件の特徴",
+  };
+  return names[key] ?? key;
+}
+
