@@ -6,9 +6,12 @@ import { scoringSchemaReady } from "../../../../lib/scoring/schema-check";
 import { btnPrimary, btnSecondary, card } from "../../../_lib/ui";
 import LocationMap from "../LocationMap";
 import PropertyForm, { type PropertyValues } from "../PropertyForm";
-import SurroundingsPanel, { type FetchRow } from "../SurroundingsPanel";
+import SurroundingsPanel, { type CityDistricts, type FetchRow } from "../SurroundingsPanel";
 import { photoUrl, photoVersions } from "../../../../lib/photos";
 import { OSM_SUPERMARKET } from "../../../../lib/surroundings/layers";
+import { countSchools } from "../../../../lib/surroundings/fetch";
+import { parseAddress } from "../../../../lib/school-zones/parse";
+import { activeSchoolZoneVersion, findSchoolZone } from "../../../../lib/school-zones/lookup";
 import DeletePropertyButton from "../DeletePropertyButton";
 
 // 物件の画面：登録した内容の変更と、位置（地図のピン）の確認（設計書 7章、D15）
@@ -48,8 +51,8 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
   `;
   if (!row) notFound();
 
-  const fetches = await getSql()<{ api_id: string; status: FetchRow["status"]; features_kept: number; error: string | null; fetched_at: Date }[]>`
-    select api_id, status, features_kept, error, fetched_at from property_fetches where property_id = ${propertyId}
+  const fetches = await getSql()<{ api_id: string; status: FetchRow["status"]; features_kept: number; keep_m: number; error: string | null; fetched_at: Date }[]>`
+    select api_id, status, features_kept, keep_m, error, fetched_at from property_fetches where property_id = ${propertyId}
   `;
   const [last] = await getSql()<{ created_at: Date | null }[]>`
     select max(created_at) as created_at from analysis_runs where property_id = ${propertyId} and status = 'succeeded'
@@ -61,7 +64,14 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
   // 位置が、最後に周辺の情報を取ったときより新しければ（登録直後・ピンを置き直した後など）、自動で取りに行く
   const autoStart = locationConfirmed &&
     (lastFetched === null || (row.geocoded_at !== null && row.geocoded_at > lastFetched));
-  const initialFetches: FetchRow[] = fetches.map((f) => ({ apiId: f.api_id, status: f.status, featuresKept: f.features_kept, error: f.error, fetchedAt: formatDate(f.fetched_at) }));
+  // 学校は高校・大学なども入るので、小学校・中学校の数を添える
+  const schoolFetch = fetches.find((f) => f.api_id === "XKT006" && f.status === "ok");
+  const schoolCounts = hasLocation && schoolFetch ? await countSchools(getSql(), propertyId, schoolFetch.keep_m) : null;
+  const cityDistricts = await cityDistrictsOf(row.address);
+  const initialFetches: FetchRow[] = fetches.map((f) => ({
+    apiId: f.api_id, status: f.status, featuresKept: f.features_kept, error: f.error, fetchedAt: formatDate(f.fetched_at),
+    schoolCounts: f === schoolFetch ? schoolCounts : null,
+  }));
   const osmFetch = fetches.find((f) => f.api_id === OSM_SUPERMARKET);
   const supermarkets = hasLocation && osmFetch && osmFetch.status !== "failed" &&
     (!row.geocoded_at || osmFetch.fetched_at >= row.geocoded_at)
@@ -143,8 +153,25 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
         initial={initialFetches}
         initialSupermarkets={supermarkets}
         analyzed={lastAnalyzedAt !== null}
+        cityDistricts={cityDistricts}
       />
       <PropertyForm values={values} />
     </div>
   );
+}
+
+/**
+ * 国の学区データ（XKT004・005）がない市の、市の通学区域から住所で引いた学校（周辺の情報の表に添える）
+ * 分析の「小学校区・中学校区」と同じ引き方（lib/school-zones）。その市のデータがなければ null
+ */
+async function cityDistrictsOf(address: string): Promise<CityDistricts | null> {
+  const parsed = parseAddress(address);
+  if (!parsed) return null;
+  const sql = getSql();
+  const version = await activeSchoolZoneVersion(sql, parsed.cityCode);
+  if (!version) return null;
+  const zone = await findSchoolZone(sql, version.id, parsed);
+  const text = (r: typeof zone.elementary) =>
+    r.status === "decided" ? r.school : r.status === "ambiguous" ? `${r.candidates.join("または")}（番地で異なる）` : "住所の町名が一覧表にありません";
+  return { XKT004: text(zone.elementary), XKT005: text(zone.juniorHigh) };
 }

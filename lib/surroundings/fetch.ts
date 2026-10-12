@@ -17,6 +17,25 @@ export interface FetchResult {
   status: "ok" | "empty" | "failed";
   error?: string;
   supermarkets?: { name: string; distanceM: number }[];
+  /** 学校（XKT006）のうちの小学校・中学校の数。保存した件数には高校・大学なども入るため、画面で内訳を出す */
+  schoolCounts?: SchoolCounts;
+}
+
+export interface SchoolCounts {
+  elementary: number;
+  juniorHigh: number;
+}
+
+/** 物件から keepM 以内に保存した学校（XKT006）のうち、小学校・中学校の数（休校中も含む） */
+export async function countSchools(sql: Sql, propertyId: number, keepM: number): Promise<SchoolCounts> {
+  const [row] = await sql<{ elementary: number; junior_high: number }[]>`
+    select count(*) filter (where g.properties->>'P29_003_name_ja' = '小学校')::int as elementary,
+           count(*) filter (where g.properties->>'P29_003_name_ja' = '中学校')::int as junior_high
+    from geo_features g, properties p
+    where p.id = ${propertyId} and g.api_id = 'XKT006'
+      and extensions.st_dwithin(g.geom::extensions.geography, p.geom::extensions.geography, ${keepM})
+  `;
+  return { elementary: row?.elementary ?? 0, juniorHigh: row?.junior_high ?? 0 };
 }
 
 interface Feature {
@@ -132,6 +151,7 @@ export async function fetchLayer(sql: Sql, propertyId: number, apiKey: string, l
     `;
     result.featuresKept = kept.n;
     result.status = kept.n > 0 ? "ok" : "empty";
+    if (layer.apiId === "XKT006") result.schoolCounts = await countSchools(sql, propertyId, keepM);
   } catch (error) {
     result.status = "failed";
     result.error = error instanceof Error ? error.message : String(error);

@@ -55,3 +55,23 @@ export async function fetchJson<T>(url: string, init: RequestInit = {}, retries 
     }
   }
 }
+
+/** HTML などの文字列を取得する。やり直しの決まりは fetchJson と同じ。404 は null */
+export async function fetchText(url: string, init: RequestInit = {}, retries = 3): Promise<string | null> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(url, init);
+      if (res.status === 404) return null;
+      if (!res.ok) {
+        const message = `${res.status} ${res.statusText}：${(await res.text()).slice(0, 200)}`;
+        throw res.status < 500 ? new ClientError(message, res.status) : new HttpError(message, res.status);
+      }
+      return await res.text();
+    } catch (error) {
+      if (error instanceof ClientError || attempt >= retries) throw error;
+      const wait = 2000 * 2 ** attempt;
+      console.warn(`  取得に失敗しました。${wait / 1000}秒後にやり直します（${attempt + 1}/${retries}）`);
+      await sleep(wait);
+    }
+  }
+}

@@ -136,7 +136,7 @@ function NearbyListsCard({ lists }: { lists: NearbyLists }) {
     <div className={`${card} p-5`}>
       <div className="text-[13px] font-bold text-ink">周辺の学校・保育園</div>
       <div className="text-[11px] text-muted mt-1 mb-3.5">
-        距離は直線、徒歩は「直線×1.3、分速80m」の目安です。最寄りの学校が通う学校（学区）とは限りません（新潟市・長岡市は学区のデータがありません）。
+        距離は直線、徒歩は「直線×1.3、分速80m」の目安です。最寄りの学校が通う学校（学区）とは限りません（学区は分析結果の「小学校区・中学校区」を見てください。新潟市は市の通学区域から住所で引きます。長岡市は学区のデータがありません）。
       </div>
       <div className="grid gap-5 lg:grid-cols-3">
         <FacilityRows title="小学校（近い順に3校）" items={lists.elementary} empty="周りにありません" />

@@ -3,6 +3,8 @@ import { featuresAtPoint, fetchRecord, notFetched, walking } from "./common";
 import { singleVersion } from "./versions";
 import { OSM_SUPERMARKET } from "../surroundings/layers";
 import { hasInternalMedicine } from "./medical";
+import { parseAddress } from "../school-zones/parse";
+import { findSchoolZone, SCHOOL_ZONE_SOURCES } from "../school-zones/lookup";
 
 // ④ 周辺施設（設計書 5.3）：最寄りの学校・保育園・駅、学区、施設の数、用途地域
 // 距離は直線。徒歩の目安は「直線×1.3、分速80m」。最寄りの学校＝通う学校（学区）とは限らない
@@ -138,15 +140,57 @@ async function nurseryCount(ctx: AnalyzerContext, key = "facility.nursery_count"
   };
 }
 
-/** 学区。新潟市・長岡市などはデータがない（features_in_tiles = 0） */
-async function district(ctx: AnalyzerContext, key: string, apiId: string, nameField: string, label: string): Promise<FactDraft> {
+/**
+ * 市の通学区域の一覧表から、住所の町名・丁目・番地で学校を引く。その市のデータがなければ null
+ * 番地によって学校が分かれ、住所からは決められないときは insufficient にして候補を出す
+ */
+async function schoolZone(ctx: AnalyzerContext, key: string, field: "elementary" | "juniorHigh", label: string): Promise<FactDraft | null> {
+  const address = parseAddress(ctx.property.address);
+  if (!address) return null;
+  const version = SCHOOL_ZONE_SOURCES.flatMap((s) => ctx.versions.get(s) ?? []).find((v) => v.coverage === `city:${address.cityCode}`);
+  if (!version) return null;
+
+  const resolved = await findSchoolZone(ctx.sql, version.id, address);
+  const result = resolved[field];
+  const scope = { type: "address", address: ctx.property.address };
+  const base = { datasetVersionIds: [version.id], attribution: version.attribution };
+  if (result.status === "none") {
+    return { key, status: "not_available", scope, basis: { reason: `住所の町名が市の通学区域の一覧表に見つかりません（${address.rest || "町名なし"}）` }, ...base };
+  }
+  const where = { town: resolved.town, chome: resolved.detail?.chome ?? null, lots: [...new Set(result.rows.map((r) => r.lot_text))] };
+  if (result.status === "ambiguous") {
+    return {
+      key,
+      valueText: `${result.candidates.join("または")}（番地で異なる）`,
+      status: "insufficient",
+      scope,
+      basis: { reason: `番地によって${label}が分かれるため、住所からは1校に決められません`, candidates: result.candidates, ...where },
+      ...base,
+    };
+  }
+  return {
+    key,
+    valueText: result.school,
+    status: "ok",
+    scope,
+    basis: { school: result.school, method: "住所の町名・丁目・番地を市の通学区域の一覧表で引いた", ...where },
+    ...base,
+  };
+}
+
+/** 学区。新潟市・長岡市などは国土数値情報にデータがない（features_in_tiles = 0）ので、市の通学区域で補う */
+async function district(ctx: AnalyzerContext, key: string, apiId: string, nameField: string, label: string, field: "elementary" | "juniorHigh"): Promise<FactDraft> {
   const version = singleVersion(ctx.versions, `reinfolib/${apiId}`);
   const record = await fetchRecord(ctx, apiId);
   const scope = { type: "point" };
-  if (!version || !record || record.status === "failed") return notFetched(key, record, scope);
+  if (!version || !record || record.status === "failed") return (await schoolZone(ctx, key, field, label)) ?? notFetched(key, record, scope);
 
   const [f] = await featuresAtPoint(ctx, apiId);
   if (!f) {
+    if (record.features_in_tiles === 0) {
+      const fromCity = await schoolZone(ctx, key, field, label);
+      if (fromCity) return fromCity;
+    }
     const reason = record.features_in_tiles === 0 ? `この地域には${label}のデータがありません` : `物件の地点を含む${label}がありません`;
     return { key, status: "not_available", scope, basis: { reason }, datasetVersionIds: [version.id], attribution: version.attribution };
   }
@@ -379,8 +423,8 @@ export const facilitiesAnalyzer: Analyzer = {
   run: async (ctx) => [
     await nearestSchool(ctx, "facility.elementary_nearest", "小学校"),
     await nearestSchool(ctx, "facility.junior_high_nearest", "中学校"),
-    await district(ctx, "facility.elementary_district", "XKT004", "A27_004_ja", "小学校区"),
-    await district(ctx, "facility.junior_high_district", "XKT005", "A32_004_ja", "中学校区"),
+    await district(ctx, "facility.elementary_district", "XKT004", "A27_004_ja", "小学校区", "elementary"),
+    await district(ctx, "facility.junior_high_district", "XKT005", "A32_004_ja", "中学校区", "juniorHigh"),
     await nearestNursery(ctx),
     await nurseryCount(ctx),
     await nurseryCount(ctx, "facility.nursery_count_800m", 800),
