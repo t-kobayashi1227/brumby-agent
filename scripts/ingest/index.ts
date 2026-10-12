@@ -6,6 +6,7 @@ import { estatBoundaries } from "./jobs/estat-boundaries";
 import { estatCensus } from "./jobs/estat-census";
 import { reinfolibLandPrices } from "./jobs/reinfolib-land-prices";
 import { reinfolibTransactions } from "./jobs/reinfolib-transactions";
+import { mlitBusStops } from "./jobs/mlit-bus-stops";
 import { runIngest, type IngestJob } from "./lib/runner";
 
 const jobs: Record<string, IngestJob> = {
@@ -13,6 +14,7 @@ const jobs: Record<string, IngestJob> = {
   "reinfolib-land-prices": reinfolibLandPrices,
   "estat-boundaries": estatBoundaries,
   "estat-census": estatCensus,
+  "mlit-bus-stops": mlitBusStops,
 };
 
 async function main() {

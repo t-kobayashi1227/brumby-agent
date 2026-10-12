@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "db:check": "tsx --env-file=.env.local scripts/db-check.ts",
+    "db:check-bus-stops": "tsx --env-file=.env.local scripts/check-bus-stops.ts",
     "ingest": "tsx --env-file=.env.local scripts/ingest/index.ts",
     "build:district-areas": "tsx --env-file=.env.local scripts/build-district-areas.ts",
     "fetch-surroundings": "tsx --env-file=.env.local scripts/fetch-surroundings.ts",

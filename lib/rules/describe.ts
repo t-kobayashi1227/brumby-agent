@@ -38,6 +38,7 @@ export const FACT_OPTIONS: FactOption[] = [
   { group: "周辺施設", key: "facility.nursery_nearest", label: "最寄りの保育園・幼稚園等までの直線距離", unit: "m", comparable: false },
   { group: "周辺施設", key: "facility.nursery_count", label: "半径の中の保育園・幼稚園等の数", unit: "件", comparable: false },
   { group: "周辺施設", key: "facility.station_nearest", label: "最寄りの駅までの直線距離", unit: "m", comparable: false },
+  { group: "周辺施設", key: "facility.supermarket_nearest", label: "最寄りのスーパーまでの直線距離", unit: "m", comparable: false },
   { group: "相場", key: "market.price_median", label: "周りの取引価格の中央値", unit: "万円", comparable: false },
   { group: "相場", key: "market.price_gap", label: "物件の価格と取引価格の中央値の差", unit: "ratio", comparable: false },
   { group: "相場", key: "market.unit_price_median", label: "土地の1㎡あたりの取引価格の中央値", unit: "円/㎡", comparable: true, comparisonLabel: "物件の1㎡あたりの価格" },

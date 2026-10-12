@@ -1,5 +1,6 @@
 import type { Sql } from "../db";
-import { DEFAULT_RADIUS_M, LAYERS, type Layer } from "./layers";
+import { DEFAULT_RADIUS_M, LAYERS, OSM_SUPERMARKET, type Layer } from "./layers";
+import { fetchSupermarkets } from "./osm";
 
 // 物件の周りの公開データを取って保存する（設計書 4.2「物件の登録時に、周りの地物だけを取得して保存」）
 // 物件の画面（登録・位置の保存の後に自動で）と scripts/ の両方から呼ぶ
@@ -15,6 +16,7 @@ export interface FetchResult {
   featuresKept: number;
   status: "ok" | "empty" | "failed";
   error?: string;
+  supermarkets?: { name: string; distanceM: number }[];
 }
 
 interface Feature {
@@ -161,7 +163,9 @@ export async function fetchSurroundings(
   const layers = options.apiIds ? LAYERS.filter((l) => options.apiIds!.includes(l.apiId)) : LAYERS;
   const results: FetchResult[] = [];
   for (const layer of layers) {
-    const result = await fetchLayer(sql, propertyId, apiKey, layer, options.radiusM);
+    const result = layer.apiId === OSM_SUPERMARKET
+      ? await fetchSupermarkets(sql, propertyId, options.radiusM)
+      : await fetchLayer(sql, propertyId, apiKey, layer, options.radiusM);
     log(`${layer.apiId} ${layer.name}：タイル${result.tiles}枚、地物${result.featuresInTiles}件 → 保存${result.featuresKept}件（${result.status}${result.error ? `：${result.error}` : ""}）`);
     results.push(result);
   }

@@ -45,7 +45,7 @@ export interface StrategyClientProps {
   appeals: AppealLite[];
   areaStats: { label: string; value: string; sub: string }[];
   nearby: { label: string; name: string; walkMin: number; distanceM: number }[];
-  /** 周辺の学校・保育園の一覧（2026-10-12 以降の分析だけ。古い分析は空） */
+  /** 分析時点の周辺施設の一覧。古い分析は空 */
   nearbyLists: NearbyLists;
   media: MediaRow[];
   /** 採点ルール表（D35）の結果。2026-10-12より前の実行は null */
@@ -449,6 +449,16 @@ export default function StrategyClient(props: StrategyClientProps) {
             </div>
           )}
           <NearbyListsCard lists={props.nearbyLists} />
+          {props.nearbyLists.supermarketRadiusM !== null && (
+            <div className={`${card} p-5`}>
+              <div className="text-[13px] font-bold text-ink">周辺のスーパーマーケット</div>
+              <div className="text-[11px] text-muted mt-1 mb-3.5">
+                物件から{props.nearbyLists.supermarketRadiusM.toLocaleString("ja-JP")}m以内、直線距離順に最大10件。徒歩は「直線×1.3、分速80m」の目安です。
+              </div>
+              <FacilityRows title="スーパーマーケット" items={props.nearbyLists.supermarkets} empty="この範囲にはありません" />
+              <SourceNote className="mt-3">© OpenStreetMap contributors</SourceNote>
+            </div>
+          )}
           {byKey("property_location") && <AnswerSection section={byKey("property_location")!} facts={facts} />}
           <div className="text-xs">
             <Link href={`/research/result?property=${propertyId}`} className="text-primary underline">競合物件との比較（競合診断）を見る</Link>

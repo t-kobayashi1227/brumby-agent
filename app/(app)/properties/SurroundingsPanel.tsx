@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { LAYERS } from "../../../lib/surroundings/layers";
+import { LAYERS, OSM_SUPERMARKET } from "../../../lib/surroundings/layers";
 import { btnPrimary, btnSecondary, card } from "../../_lib/ui";
 import { fetchSurroundingLayer } from "./actions";
 
-// 物件の周りの公開データ（不動産情報ライブラリ XKT系）を取る（設計書 4.2「物件の登録時に、周りの地物だけを取得して保存」）
+// 物件の周りの公開データ（不動産情報ライブラリ XKT系・OpenStreetMap）を取る
 // 位置が新しくなったら（登録・地図でのピンの保存・住所からの取り直し）、自動で取りに行く
 // 1種類ずつ別の呼び出しで取り、表に進み具合を出す。失敗した種類があっても最後まで進める
 
@@ -40,12 +40,13 @@ const rangeOf = (apiId: string) => {
   return l.mode === "radius" ? "半径3km" : l.keepM ? `${l.keepM}m以内` : "物件を含む区域";
 };
 
-export default function SurroundingsPanel({ propertyId, hasLocation, autoStart, initial, analyzed }: { propertyId: number; hasLocation: boolean; autoStart: boolean; initial: FetchRow[]; analyzed: boolean }) {
+export default function SurroundingsPanel({ propertyId, hasLocation, autoStart, initial, initialSupermarkets, analyzed }: { propertyId: number; hasLocation: boolean; autoStart: boolean; initial: FetchRow[]; initialSupermarkets: { name: string; distanceM: number }[]; analyzed: boolean }) {
   const [rows, setRows] = useState<FetchRow[]>(() =>
     LAYERS.map((l) => initial.find((r) => r.apiId === l.apiId) ?? { apiId: l.apiId, status: "waiting", featuresKept: null, error: null, fetchedAt: null }),
   );
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+  const [supermarkets, setSupermarkets] = useState(initialSupermarkets);
   const started = useRef(false);
 
   const update = (apiId: string, patch: Partial<FetchRow>) => setRows((rs) => rs.map((r) => (r.apiId === apiId ? { ...r, ...patch } : r)));
@@ -59,12 +60,13 @@ export default function SurroundingsPanel({ propertyId, hasLocation, autoStart, 
       update(layer.apiId, { status: "running" });
       try {
         const r = await fetchSurroundingLayer(propertyId, layer.apiId);
+        if (layer.apiId === OSM_SUPERMARKET) setSupermarkets(r.status === "failed" ? [] : r.supermarkets ?? []);
         update(layer.apiId, { status: r.status, featuresKept: r.featuresKept, error: r.error ?? null, fetchedAt: "いま" });
         if (r.status === "failed") failed++;
-        // APIキーがないときは、残りも同じ理由で失敗するので止める
+        // APIキーがないときは、残りの XKT 系も同じ理由で失敗する
         if (r.error?.includes("REINFOLIB_API_KEY")) {
-          setRows((rs) => rs.map((x) => (x.status === "waiting" ? { ...x, status: "failed", error: r.error ?? null } : x)));
-          failed = LAYERS.length;
+          setRows((rs) => rs.map((x) => (x.status === "waiting" && x.apiId.startsWith("XKT") ? { ...x, status: "failed", error: r.error ?? null } : x)));
+          failed += LAYERS.filter((x) => x.apiId.startsWith("XKT")).length - 1;
           break;
         }
       } catch (e) {
@@ -98,12 +100,12 @@ export default function SurroundingsPanel({ propertyId, hasLocation, autoStart, 
     <div className={`${card} p-5 grid gap-3`}>
       <div className="flex flex-wrap items-end gap-2">
         <div className="mr-auto">
-          <div className="text-[15px] font-bold text-ink">周辺の情報（施設・学区・防災・将来人口・用途地域）</div>
+          <div className="text-[15px] font-bold text-ink">周辺の情報（スーパー・施設・学区・防災・将来人口・用途地域）</div>
           <div className="text-[11px] text-muted mt-0.5">
             {hasLocation
               ? running
                 ? `取得中… ${finished}/${LAYERS.length}種類（1種類ずつ取っています。この画面を開いたままにしてください）`
-                : "物件の位置のまわりを、不動産情報ライブラリから取ります。位置を直したときは、自動で取り直します"
+                : "地図の位置を確定すると、周辺のスーパーと公開データを自動で取得します"
               : "位置を指定すると、自動で取りに行きます"}
           </div>
         </div>
@@ -111,8 +113,8 @@ export default function SurroundingsPanel({ propertyId, hasLocation, autoStart, 
           {running ? "取得中…" : "取り直す"}
         </button>
         {hasLocation ? (
-          <Link href={`/strategy?property=${propertyId}&autorun=1`} className={btnPrimary}>
-            {analyzed ? "もう一度分析する →" : "分析へ →"}
+          <Link href={`/strategy?property=${propertyId}`} className={btnPrimary}>
+            {analyzed ? "分析画面へ →" : "分析へ →"}
           </Link>
         ) : (
           <span aria-disabled="true" className={`${btnPrimary} opacity-50 cursor-not-allowed`}>
@@ -147,8 +149,16 @@ export default function SurroundingsPanel({ propertyId, hasLocation, autoStart, 
           })}
         </tbody>
       </table>
+      {supermarkets.length > 0 && (
+        <div className="text-xs">
+          <div className="font-bold text-ink mb-1">近くのスーパー（直線距離順・最大10件）</div>
+          <ul className="grid gap-1 sm:grid-cols-2">
+            {supermarkets.map((s, i) => <li key={`${s.name}-${i}`} className="text-body">{s.name} <span className="text-muted">約{s.distanceM.toLocaleString("ja-JP")}m</span></li>)}
+          </ul>
+        </div>
+      )}
       {done && <div className={`rounded-md border px-3 py-2 text-xs ${done.includes("失敗") ? "border-[#f0d9a8] bg-[#fff8e8] text-[#8a5a00]" : "border-[#bfe5c6] bg-[#e9f8ec] text-[#157347]"}`}>{done}</div>}
-      <div className="text-[11px] text-muted">出典：国土交通省 不動産情報ライブラリ。新潟市・長岡市の学区はデータがないため「データなし」になります。商業施設（OpenStreetMap）はまだ取っていません</div>
+      <div className="text-[11px] text-muted">出典：国土交通省 不動産情報ライブラリ、© OpenStreetMap contributors。スーパーの距離は直線距離です。新潟市・長岡市の学区はデータがないため「データなし」になります。</div>
     </div>
   );
 }

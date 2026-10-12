@@ -310,6 +310,7 @@ export function nearbyFacilities(facts: ReportFact[]): NearbyFacility[] {
     { key: "facility.elementary_nearest", label: "小学校" },
     { key: "facility.junior_high_nearest", label: "中学校" },
     { key: "facility.station_nearest", label: "駅" },
+    { key: "facility.supermarket_nearest", label: "スーパー" },
   ];
   const items = specs
     .map((s) => {
@@ -331,6 +332,8 @@ export interface NearbyLists {
   /** 半径 nurseryRadiusM の中の保育園・幼稚園等（近い順） */
   nurseries: NearbyListItem[];
   nurseryRadiusM: number | null;
+  supermarkets: NearbyListItem[];
+  supermarketRadiusM: number | null;
 }
 
 /**
@@ -345,11 +348,16 @@ export function nearbyLists(facts: ReportFact[]): NearbyLists {
     return (raw ?? []).map((r) => ({ name: r.name, kind: r.kind, straightM: r.straight_m, walkMin: r.walk_min }));
   };
   const nursery = findFact(facts, "facility.nursery_count_800m");
+  const supermarket = findFact(facts, "facility.supermarket_nearest");
   return {
     elementary: list("facility.elementary_nearest", "nearby"),
     juniorHigh: list("facility.junior_high_nearest", "nearby"),
     nurseries: list("facility.nursery_count_800m", "facilities"),
     nurseryRadiusM: (nursery?.scope as { meters?: number } | null)?.meters ?? null,
+    supermarkets: list("facility.supermarket_nearest", "nearby"),
+    supermarketRadiusM: supermarket?.status === "ok" || supermarket?.status === "insufficient"
+      ? (supermarket.scope as { search_radius_m?: number } | null)?.search_radius_m ?? null
+      : null,
   };
 }
 

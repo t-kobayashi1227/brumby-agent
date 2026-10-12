@@ -8,6 +8,8 @@ import LocationMap from "../LocationMap";
 import PropertyForm, { type PropertyValues } from "../PropertyForm";
 import SurroundingsPanel, { type FetchRow } from "../SurroundingsPanel";
 import { photoUrl, photoVersions } from "../../../../lib/photos";
+import { OSM_SUPERMARKET } from "../../../../lib/surroundings/layers";
+import DeletePropertyButton from "../DeletePropertyButton";
 
 // 物件の画面：登録した内容の変更と、位置（地図のピン）の確認（設計書 7章、D15）
 export const dynamic = "force-dynamic";
@@ -54,10 +56,24 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
   `;
   const lastAnalyzedAt = last?.created_at ?? null;
   const hasLocation = row.lon !== null && row.lat !== null;
+  const locationConfirmed = hasLocation && row.geocode_source === "manual";
   const lastFetched = fetches.reduce<Date | null>((m, f) => (m === null || f.fetched_at > m ? f.fetched_at : m), null);
   // 位置が、最後に周辺の情報を取ったときより新しければ（登録直後・ピンを置き直した後など）、自動で取りに行く
-  const autoStart = hasLocation && (lastFetched === null || (row.geocoded_at !== null && row.geocoded_at > lastFetched));
+  const autoStart = locationConfirmed &&
+    (lastFetched === null || (row.geocoded_at !== null && row.geocoded_at > lastFetched));
   const initialFetches: FetchRow[] = fetches.map((f) => ({ apiId: f.api_id, status: f.status, featuresKept: f.features_kept, error: f.error, fetchedAt: formatDate(f.fetched_at) }));
+  const osmFetch = fetches.find((f) => f.api_id === OSM_SUPERMARKET);
+  const supermarkets = hasLocation && osmFetch && osmFetch.status !== "failed" &&
+    (!row.geocoded_at || osmFetch.fetched_at >= row.geocoded_at)
+    ? (await getSql()<{ name: string; distance_m: number }[]>`
+      select coalesce(nullif(g.properties->>'name', ''), nullif(g.properties->>'brand', ''), '名称未登録のスーパー') as name,
+        extensions.st_distance(g.geom::extensions.geography, p.geom::extensions.geography) as distance_m
+      from geo_features g, properties p
+      where p.id = ${propertyId} and g.api_id = ${OSM_SUPERMARKET} and g.feature_id like ${`${propertyId}:%`}
+        and extensions.st_dwithin(g.geom::extensions.geography, p.geom::extensions.geography, 3000)
+      order by distance_m limit 10
+    `).map((r) => ({ name: r.name, distanceM: Math.round(r.distance_m) }))
+    : [];
 
   const photoVersion = (await photoVersions(getSql(), [propertyId])).get(propertyId);
   const values: PropertyValues = {
@@ -72,22 +88,22 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
   return (
     <div className="grid gap-4">
       <PropertySteps
-        current={hasLocation ? "surroundings" : "location"}
+        current={locationConfirmed ? "surroundings" : "location"}
         propertyId={values.id}
-        done={{ register: true, location: hasLocation, surroundings: fetches.length > 0, analysis: lastAnalyzedAt !== null }}
+        done={{ register: true, location: locationConfirmed, surroundings: fetches.length > 0, analysis: lastAnalyzedAt !== null }}
       />
       <div className={`${card} p-5 flex flex-wrap items-center gap-3`}>
         <div className="mr-auto">
           <div className="text-base font-extrabold text-ink">
             物件{values.id}：{values.name}
           </div>
-          {created && <div className="text-xs text-[#157347] mt-1">登録しました。地図で位置を確かめてください。位置があれば、周辺の情報を自動で取りに行きます（取り終わったら分析へ）。</div>}
+          {created && <div className="text-xs text-[#157347] mt-1">登録しました。地図のピンを確認し、「この位置で確定」を押すと周辺の情報を取得します。</div>}
           {geocode === "failed" && <div className="text-xs text-[#b91c1c] mt-1">住所から位置を取れませんでした（見つからない、または住所検索につながらない）。地図をクリックして位置を指定してください。</div>}
         </div>
-        {!hasLocation ? (
+        {!locationConfirmed ? (
           // 位置がないと分析できない（集計が止まる）ので、押せなくして理由を出す
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-muted">地図でピンを置くと分析できます</span>
+            <span className="text-[11px] text-muted">地図の位置を確定すると分析できます</span>
             <span aria-disabled="true" className={`${btnPrimary} opacity-50 cursor-not-allowed`}>
               この物件を分析する →
             </span>
@@ -99,15 +115,18 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
             <Link href={`/strategy?property=${values.id}`} className={btnSecondary}>
               前回の結果を見る
             </Link>
-            <Link href={`/strategy?property=${values.id}&autorun=1`} className={btnPrimary}>
-              もう一度分析する →
+            <Link href={`/strategy?property=${values.id}`} className={btnPrimary}>
+              分析画面へ →
             </Link>
           </div>
         ) : (
-          <Link href={`/strategy?property=${values.id}&autorun=1`} className={btnPrimary}>
-            この物件を分析する →
+          <Link href={`/strategy?property=${values.id}`} className={btnPrimary}>
+            分析画面へ →
           </Link>
         )}
+      </div>
+      <div className="flex justify-end">
+        <DeletePropertyButton propertyId={values.id!} name={values.name} redirectAfterDelete />
       </div>
       <LocationMap
         propertyId={values.id!}
@@ -119,9 +138,10 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
       <SurroundingsPanel
         key={row.geocoded_at ? new Date(row.geocoded_at).toISOString() : "none"}
         propertyId={values.id!}
-        hasLocation={hasLocation}
+        hasLocation={locationConfirmed}
         autoStart={autoStart}
         initial={initialFetches}
+        initialSupermarkets={supermarkets}
         analyzed={lastAnalyzedAt !== null}
       />
       <PropertyForm values={values} />

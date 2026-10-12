@@ -170,11 +170,15 @@ describe("入力の読み取り", () => {
     };
     const facts = [
       { key: "facility.station_nearest", value: 1600, status: "ok" as const, datasetVersionIds: [1] },
+      { key: "facility.supermarket_nearest", value: 480, status: "ok" as const, datasetVersionIds: [3] },
       { key: "target.age_65plus_ratio", value: 0.3, comparison: 0.25, status: "ok" as const, datasetVersionIds: [2] },
     ];
     const config = baseConfig({ market: [{ ward: "中央区", ageClass: "新築", priceManYen: 3500, buildingSqm: null, landSqm: null, ageYears: null, n: null }] });
     const r = buildInputs(config, property, facts, []);
     expect(r.values["駅_m"]).toMatchObject({ value: 900, source: "手入力" });
+    expect(r.values["スーパー_m"]).toMatchObject({ value: 480, factKey: "facility.supermarket_nearest" });
+    expect(buildInputs(config, { ...property, manual_metrics: { スーパー_m: 300 } }, facts, []).values["スーパー_m"])
+      .toMatchObject({ value: 300, source: "手入力" });
     expect(r.values["高齢者比率_市比"]).toMatchObject({ value: 1.2 });
     expect(r.values["部屋数"].value).toBe(4);
     expect(r.values["築年数"].value).toBe(0);

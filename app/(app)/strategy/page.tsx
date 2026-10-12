@@ -95,10 +95,8 @@ export default async function StrategyPage({ searchParams }: { searchParams: Sea
 
   const lastRadius = typeof report.run.params.radius_m === "number" ? report.run.params.radius_m : null;
 
-  // 物件の画面の「この物件を分析する」から来たとき（?autorun=1）は、開いたらすぐ分析を始める。進み具合が見えるよう、上に出す
-  const autorun = sp.autorun === "1";
-  const runnerOnTop = !hasRun || autorun;
-  const runner = <AnalysisRunner propertyId={propertyId} autoStart={autorun} />;
+  const runnerOnTop = !hasRun;
+  const runner = <AnalysisRunner propertyId={propertyId} />;
 
   return (
     <>

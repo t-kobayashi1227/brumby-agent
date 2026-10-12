@@ -1,6 +1,7 @@
 import type { Analyzer, AnalyzerContext, FactDraft } from "../types";
 import { featuresAtPoint, fetchRecord, notFetched, walking } from "./common";
 import { singleVersion } from "./versions";
+import { OSM_SUPERMARKET } from "../surroundings/layers";
 
 // ④ 周辺施設（設計書 5.3）：最寄りの学校・保育園・駅、学区、施設の数、用途地域
 // 距離は直線。徒歩の目安は「直線×1.3、分速80m」。最寄りの学校＝通う学校（学区）とは限らない
@@ -21,6 +22,7 @@ async function nearestList(ctx: AnalyzerContext, apiId: string, withinM: number,
     select g.properties, extensions.st_distance(g.geom::extensions.geography, p.geom::extensions.geography) as distance_m
     from geo_features g, properties p
     where p.id = ${ctx.property.id} and g.api_id = ${apiId}
+      and (${apiId} <> ${OSM_SUPERMARKET} or g.feature_id like ${`${ctx.property.id}:%`})
       and extensions.st_dwithin(g.geom::extensions.geography, p.geom::extensions.geography, ${withinM})
     order by g.geom::extensions.geography <-> p.geom::extensions.geography
     limit 200
@@ -209,6 +211,31 @@ async function nearestStation(ctx: AnalyzerContext): Promise<FactDraft> {
   };
 }
 
+async function nearestSupermarket(ctx: AnalyzerContext): Promise<FactDraft> {
+  const key = "facility.supermarket_nearest";
+  const version = singleVersion(ctx.versions, "osm/supermarket");
+  const record = await fetchRecord(ctx, OSM_SUPERMARKET);
+  const scope = { type: "nearest", search_radius_m: record?.keep_m ?? null };
+  if (!version || !record || record.status === "failed") return notFetched(key, record, scope);
+  const list = await nearestList(ctx, OSM_SUPERMARKET, record.keep_m, () => true, 10);
+  const found = list[0] ?? null;
+  if (!found) return {
+    key, status: "insufficient", scope,
+    basis: { reason: `半径${record.keep_m}m以内にOpenStreetMap登録のスーパーがありません` },
+    datasetVersionIds: [version.id], attribution: version.attribution,
+  };
+  const w = walking(found.distance_m);
+  const name = String(found.properties.name ?? found.properties.brand ?? "名称未登録のスーパー");
+  return {
+    key, value: w.straight_m, valueText: `${name}（直線${w.straight_m}m、徒歩約${w.walk_min}分）`,
+    unit: "m", scope, basis: {
+      name, ...w, rule: "直線×1.3、分速80m",
+      nearby: list.map((r) => listItem(r.properties.name ?? r.properties.brand ?? "名称未登録のスーパー", null, r.distance_m)),
+    }, status: "ok",
+    datasetVersionIds: [version.id], attribution: version.attribution,
+  };
+}
+
 async function zoning(ctx: AnalyzerContext): Promise<FactDraft> {
   const key = "area.zoning";
   const version = singleVersion(ctx.versions, "reinfolib/XKT002");
@@ -254,6 +281,7 @@ export const facilitiesAnalyzer: Analyzer = {
     await nurseryCount(ctx),
     await nurseryCount(ctx, "facility.nursery_count_800m", 800),
     await nearestStation(ctx),
+    await nearestSupermarket(ctx),
     await zoning(ctx),
   ],
 };

@@ -2,6 +2,7 @@
 // zoom は各APIで取れる範囲（マニュアル）の中から、1枚の大きさと件数を見て決めた
 
 export type LayerMode = "radius" | "point";
+export const OSM_SUPERMARKET = "OSM_SUPERMARKET";
 
 export interface Layer {
   apiId: string;
@@ -14,6 +15,7 @@ export interface Layer {
 }
 
 export const LAYERS: Layer[] = [
+  { apiId: OSM_SUPERMARKET, name: "スーパーマーケット（OpenStreetMap）", mode: "radius", zoom: 0 },
   { apiId: "XKT006", name: "学校", mode: "radius", zoom: 13 },
   { apiId: "XKT007", name: "保育園・幼稚園等", mode: "radius", zoom: 13 },
   { apiId: "XKT015", name: "駅別乗降客数", mode: "radius", zoom: 13 },

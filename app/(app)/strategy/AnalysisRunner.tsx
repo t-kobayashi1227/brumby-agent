@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { card, btnPrimary, fieldLabel } from "../../_lib/ui";
@@ -27,14 +27,12 @@ const STAGES: { key: Stage; label: string; note: string }[] = [
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export default function AnalysisRunner({ propertyId, autoStart = false }: { propertyId: number; autoStart?: boolean }) {
+export default function AnalysisRunner({ propertyId }: { propertyId: number }) {
   const router = useRouter();
   const [radius, setRadius] = useState<number | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const running = progress?.status === "running";
-  const started = useRef(false);
-  // 物件の画面から来たとき（?autorun=1）は、開いたらすぐ実行する。終わったら URL から autorun を外す（読み直しで二重に動かさない）
   const cleanUrl = `/strategy?property=${propertyId}`;
 
   async function run() {
@@ -51,22 +49,11 @@ export default function AnalysisRunner({ propertyId, autoStart = false }: { prop
       }
       // 終わったら結果を読み直す。done= を付けて、画面の上に「分析が終わりました」を出し続ける
       if (p.status === "succeeded") router.replace(`${cleanUrl}&done=${p.runId}`);
-      else if (autoStart) window.history.replaceState(null, "", cleanUrl);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setProgress(null);
-      if (autoStart) window.history.replaceState(null, "", cleanUrl);
     }
   }
-
-  useEffect(() => {
-    if (autoStart && !started.current) {
-      started.current = true;
-      void run();
-    }
-    // run は描画ごとに作り直されるが、最初の1回だけ呼べばよい
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoStart]);
 
   const currentIndex = progress?.stage ? STAGES.findIndex((s) => s.key === progress.stage) : -1;
   const stateOf = (i: number) => {

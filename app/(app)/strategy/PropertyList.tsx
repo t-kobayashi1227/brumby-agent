@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { card, tableHead } from "../../_lib/ui";
+import DeletePropertyButton from "../properties/DeletePropertyButton";
 
 // 販売戦略（/strategy）の物件の一覧。/dashboard と同じ表の形にし、物件が増えても見やすくする
 // 物件を選ぶと ?property=<id> で販売戦略を開く。写真は物件の画面で登録したもの（なければ共通の仮画像）
@@ -44,8 +45,8 @@ const COLS = "grid-cols-[2.6fr_0.9fr_1.9fr_1fr_1fr]";
 
 const formatDate = (iso: string) => new Date(iso).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 
-/** 分析済みなら販売戦略、位置があれば開いてすぐ分析、位置がなければ物件の画面で位置を決める */
-const hrefOf = (p: PropertyListItem) => (p.lastAnalyzedAt ? `/strategy?property=${p.id}` : p.hasLocation ? `/strategy?property=${p.id}&autorun=1` : `/properties/${p.id}`);
+/** 位置がある物件は販売戦略を開き、位置がない物件は物件の画面で位置を決める */
+const hrefOf = (p: PropertyListItem) => (p.hasLocation ? `/strategy?property=${p.id}` : `/properties/${p.id}`);
 
 export default function PropertyList({ properties }: { properties: PropertyListItem[] }) {
   const [sortKey, setSortKey] = useState<SortKey>("default");
@@ -104,17 +105,21 @@ export default function PropertyList({ properties }: { properties: PropertyListI
       </div>
 
       <div className="overflow-x-auto">
-        <div className="min-w-[860px]">
-          <div className={`${tableHead} ${COLS}`}>
-            <div>物件</div>
-            <div>価格</div>
-            <div>第1ターゲット</div>
-            <div>売れやすさ・予算</div>
-            <div>最終分析</div>
+        <div className="min-w-[930px]">
+          <div className={`${tableHead} grid grid-cols-[minmax(0,1fr)_70px] gap-2`}>
+            <div className={`grid ${COLS} gap-2`}>
+              <div>物件</div>
+              <div>価格</div>
+              <div>第1ターゲット</div>
+              <div>売れやすさ・予算</div>
+              <div>最終分析</div>
+            </div>
+            <div>操作</div>
           </div>
           {rows.length === 0 && <div className="py-8 text-center text-[13px] text-muted">物件がありません。</div>}
           {rows.map((p) => (
-            <Link key={p.id} href={hrefOf(p)} className={`grid ${COLS} gap-2 py-3 px-1 border-b border-divider items-center hover:bg-subtle`}>
+            <div key={p.id} className="grid grid-cols-[minmax(0,1fr)_70px] gap-2 border-b border-divider items-center hover:bg-subtle">
+              <Link href={hrefOf(p)} aria-label={`${p.name}を開く`} className={`grid ${COLS} gap-2 py-3 px-1 items-center`}>
               <div className="flex items-center gap-3 min-w-0">
                 <div className="relative w-15 h-15 rounded-md shrink-0 overflow-hidden">
                   <Image src={p.photoUrl} alt={p.name} fill sizes="60px" style={{ objectFit: "cover" }} />
@@ -155,11 +160,13 @@ export default function PropertyList({ properties }: { properties: PropertyListI
                   </>
                 ) : (
                   <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold ${p.hasLocation ? "bg-[#fef3c2] text-[#92610d]" : "bg-divider text-muted"}`}>
-                    {p.hasLocation ? "未分析（開くと分析）" : "位置が未設定"}
+                    {p.hasLocation ? "未分析" : "位置が未設定"}
                   </span>
                 )}
               </div>
-            </Link>
+              </Link>
+              <DeletePropertyButton propertyId={p.id} name={p.name} />
+            </div>
           ))}
         </div>
       </div>

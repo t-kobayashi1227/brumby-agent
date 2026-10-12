@@ -10,7 +10,8 @@ import { MAX_PHOTO_BYTES, PHOTO_TYPES, photosReady } from "../../../lib/photos";
 import type { Sql } from "../../../lib/db";
 import { SCORING_PROPERTY_COLUMNS, scoringSchemaReady } from "../../../lib/scoring/schema-check";
 import { fetchLayer, type FetchResult } from "../../../lib/surroundings/fetch";
-import { LAYERS } from "../../../lib/surroundings/layers";
+import { LAYERS, OSM_SUPERMARKET } from "../../../lib/surroundings/layers";
+import { fetchSupermarkets } from "../../../lib/surroundings/osm";
 
 // 物件の登録・変更（設計書 7章 /properties/new、D15）
 // 保存すると住所から緯度経度を取る。取れなかったとき・ずれていたときは、地図でピンを置き直す（setLocation）
@@ -19,6 +20,22 @@ import { LAYERS } from "../../../lib/surroundings/layers";
 export interface PropertyFormState {
   ok?: string;
   error?: string;
+}
+
+/** 登録物件を削除する。分析結果や写真などの子レコードは DB の外部キーで一緒に削除される。 */
+export async function deleteProperty(propertyId: number): Promise<void> {
+  if (!Number.isSafeInteger(propertyId) || propertyId <= 0) throw new Error("物件の番号が正しくありません");
+  const sql = getSql();
+  const deleted = await sql.begin(async (tx) => {
+    const rows = await tx<{ id: number }[]>`delete from properties where id = ${propertyId} returning id`;
+    if (rows.length === 0) throw new Error("物件が見つかりません。画面を更新してください");
+    await tx`delete from geo_features where api_id = ${OSM_SUPERMARKET} and feature_id like ${`${propertyId}:%`}`;
+    return rows.length;
+  });
+  if (deleted) {
+    revalidatePath("/strategy");
+    revalidatePath("/dashboard");
+  }
 }
 
 const AREA_CLASSES = ["center", "suburb", "outer"] as const;
@@ -189,7 +206,7 @@ export async function setLocation(propertyId: number, lon: number, lat: number):
   `;
   if (rows.length === 0) return { error: `物件 ${propertyId} がありません` };
   revalidatePath(`/properties/${propertyId}`);
-  return { ok: "位置を保存しました。次の分析から、この位置で集計します。" };
+  return { ok: "位置を確定しました。この位置の周辺情報を取得します。" };
 }
 
 /** 住所からもう一度位置を取る */
@@ -208,6 +225,7 @@ export async function regeocode(propertyId: number): Promise<PropertyFormState> 
 export async function fetchSurroundingLayer(propertyId: number, apiId: string): Promise<FetchResult> {
   const layer = LAYERS.find((l) => l.apiId === apiId);
   if (!Number.isInteger(propertyId) || propertyId <= 0 || !layer) throw new Error("物件または取るデータの指定が正しくありません");
+  if (apiId === OSM_SUPERMARKET) return fetchSupermarkets(getSql(), propertyId);
   const apiKey = process.env.REINFOLIB_API_KEY;
   if (!apiKey) {
     return { apiId, name: layer.name, tiles: 0, featuresInTiles: 0, featuresKept: 0, status: "failed", error: "REINFOLIB_API_KEY が設定されていません（.env.local・Vercel の環境変数）" };

@@ -63,9 +63,10 @@ export default function LocationMap({ propertyId, lon, lat, source, geocodedAt }
   }, [lon, lat]);
 
   const save = () => {
-    if (!picked) return;
+    const position = picked ?? (lon !== null && lat !== null ? [lon, lat] : null);
+    if (!position) return;
     startTransition(async () => {
-      const r = await setLocation(propertyId, picked[0], picked[1]);
+      const r = await setLocation(propertyId, position[0], position[1]);
       setMessage(r);
       if (r.ok) setPicked(null);
     });
@@ -92,8 +93,8 @@ export default function LocationMap({ propertyId, lon, lat, source, geocodedAt }
         <button type="button" onClick={retry} disabled={pending} className={`${btnSecondary} disabled:opacity-60`}>
           住所から位置を取り直す
         </button>
-        <button type="button" onClick={save} disabled={pending || !picked} className={`${btnPrimary} disabled:opacity-60`}>
-          この位置で保存
+        <button type="button" onClick={save} disabled={pending || (!picked && (lon === null || lat === null))} className={`${btnPrimary} disabled:opacity-60`}>
+          この位置で確定
         </button>
       </div>
       <div ref={box} className="h-[360px] rounded-md overflow-hidden border border-line" />

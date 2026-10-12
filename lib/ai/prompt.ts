@@ -127,7 +127,7 @@ cites には、カード番号の数字を入れる（F-07 なら 7）。
 書くもの：
 - headline：この物件の総合評価を表す一文の見出し（各セクションの内容と矛盾しないようにする）
 - ${SECTION_KEYS.length}つのセクション（key固定、この順）：
-  - property_location：${SECTION_TITLE.property_location}。周辺の人口構成・施設・相場・防災と、競合物件との違い（入力がある場合）
+  - property_location：${SECTION_TITLE.property_location}。周辺の人口構成・施設・相場・防災と、競合物件との違い（入力がある場合）。最寄りスーパーの事実カードが取れていれば、店舗名と距離を施設の説明に含める
   - target_persona：${SECTION_TITLE.target_persona}。第1〜第3ターゲットの人物像（ターゲット像の年収を含む）と、そう判断した理由（層ごとの点数と加点・減点の理由）
   - appeal_channels：${SECTION_TITLE.appeal_channels}。選ばれた訴求の言い換えと、どの媒体で届けるか
   - budget_plan：${SECTION_TITLE.budget_plan}。総予算（入力値か提案値か）と媒体ごとの配分の理由。金額は判断カードのまま
