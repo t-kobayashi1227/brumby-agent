@@ -642,7 +642,7 @@ order by f.seq;
 
 ## 7.5 ⑥ 採点ルール表（設計書D35）
 
-BRUMBY様と作った Excel「採点ルール表」を表にしたもの。最初に `npm run import-scoring -- "<xlsxのパス>"` で取り込み、以後は採点ルール表の画面（`/rules`）で直す（Supabase Studio で直してもよいが、変更理由が残らない）。どの表を変えても `scoring_revisions` に変更前後が残り、分析の実行には `scoring_revisions.id` の最大を「採点ルール表の版」として残す。計算は `lib/scoring/engine.ts`。
+BRUMBY様と作った Excel「採点ルール表」を表にしたもの。最初に `npm run import-scoring -- "<xlsxのパス>"` で取り込み、以後は採点ルール表の画面（`/rules`）で直す（「採点ルール」「項目の重視度」の行の追加と、ID・層・項目キーの変更は管理者が Excel の取り込みか Studio で行う。画面ではできない）（Supabase Studio で直してもよい）。どの表を変えても `scoring_revisions` に変更前後が残り、分析の実行には `scoring_revisions.id` の最大を「採点ルール表の版」として残す。計算は `lib/scoring/engine.ts`。
 
 ### `personas`：ペルソナ（Excel：ペルソナ・年収分布・貯蓄分布・ペルソナの年代・買い手の多さ）
 
@@ -682,15 +682,15 @@ BRUMBY様と作った Excel「採点ルール表」を表にしたもの。最�
 媒体ごとに、使う統計（`stat_name`、`media_usage_rates` の行）か一律の届きやすさ（`flat_reach`）を持つ。利用率は年代別（%）と全年代。届きやすさ＝(ペルソナの年代構成で平均した利用率)²÷全年代の利用率×反響係数。
 
 ### `media_results`：反響の記録
-**1行＝ある媒体の掲載1回分**（物件・掲載開始日・費用・問い合わせ・見学・成約）。反響係数＝全媒体の平均の問い合わせ単価÷その媒体の問い合わせ単価（0.5〜2.0）。問い合わせが `係数を使い始める問い合わせ数`（10件）未満の媒体は1.00。
+**1行＝ある媒体の掲載1回分**（物件・掲載開始日・費用・問い合わせ・見学・成約）。反響係数＝全媒体の平均の問い合わせ単価÷その媒体の問い合わせ単価（0.5〜2.0）。問い合わせが `係数を使い始める問い合わせ数`（10件）未満の媒体は1.00。計算に使うのは媒体・費用・問い合わせだけ。`visits`・`contracts`・`memo`・`entered_by` は画面からは入れない（2026-10-12）。
 
 ### `brumby_judgments`：BRUMBY様の判断（いまは使っていない）
 2026-10-12 に、PoCで見せるときに邪魔になるため販売戦略の画面から入力欄と一致率の表示を外した。表は残している。
 
-**1行＝ある物件についての判断1回。** `targets`（ペルソナID、第1〜第3）、`appeals`（`competitor_items.key`）、`media`（`media_channels.id`）、`comment`（AIとのズレの理由）、`run_id`（判断したときに見ていた分析）。販売戦略の画面で、AIの結果との一致率とズレを出す（`lib/scoring/agreement.ts`）。
+**1行＝ある物件についての判断1回。** `targets`（ペルソナID、第1〜第3）、`appeals`（`competitor_items.key`）、`media`（`media_channels.id`）、`comment`（AIとのズレの理由）、`run_id`（判断したときに見ていた分析）。以前は販売戦略の画面で、AIの結果との一致率とズレを出していた（計算のコードも外した）。
 
 ### `scoring_revisions`：採点ルール表の変更の履歴
-**1行＝⑥の表の追加・変更・削除1回**（トリガーで自動）。`before`・`after` に変更前後の行、`reason`・`related_property`・`changed_by` に画面で入れた変更理由・関連物件・変更者（`set_config('brumby.change_reason', …)` で同じトランザクションから渡す）。`table_name = 'excel'` の行は、Excel の「変更履歴」シートを取り込んだもの。
+**1行＝⑥の表の追加・変更・削除1回**（トリガーで自動）。`before`・`after` に変更前後の行、`reason`・`related_property`・`changed_by` に変更理由・関連物件・変更者（`set_config('brumby.change_reason', …)` などで同じトランザクションから渡す。入るのは Excel 取り込みの行だけ。2026-10-12 に画面の入力欄は外した）。`table_name = 'excel'` の行は、Excel の「変更履歴」シートを取り込んだもの。
 
 ---
 

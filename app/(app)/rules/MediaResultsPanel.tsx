@@ -14,9 +14,6 @@ interface ResultRow {
   started_on: string | null;
   cost_yen: number;
   inquiries: number;
-  visits: number;
-  contracts: number;
-  memo: string | null;
 }
 
 const small = "w-full mt-1 px-2 py-[6px] border border-field rounded-md text-[12px] bg-white";
@@ -30,7 +27,7 @@ export default function MediaResultsPanel({ media, results, properties, minInqui
     const rows = results.filter((r) => r.media_id === m.id);
     const cost = rows.reduce((a, r) => a + r.cost_yen, 0);
     const inq = rows.reduce((a, r) => a + r.inquiries, 0);
-    return { ...m, cost, inq, visits: rows.reduce((a, r) => a + r.visits, 0), contracts: rows.reduce((a, r) => a + r.contracts, 0), cpi: inq > 0 ? Math.round(cost / inq) : null };
+    return { ...m, cost, inq, cpi: inq > 0 ? Math.round(cost / inq) : null };
   });
 
   return (
@@ -38,22 +35,18 @@ export default function MediaResultsPanel({ media, results, properties, minInqui
       <div>
         <div className="text-[13px] font-bold text-ink">反響の集計</div>
         <div className="text-[11px] text-muted mt-1 mb-3">問い合わせが{minInquiries}件に満たない媒体の反響係数は1.00です。係数が大きい媒体ほど、配分が増えます。</div>
-        <div className={`${tableHead} grid-cols-[1.4fr_1fr_0.7fr_0.6fr_0.6fr_1fr_0.7fr] text-[11px] text-muted`}>
+        <div className={`${tableHead} grid-cols-[1.4fr_1fr_0.7fr_1fr_0.7fr] text-[11px] text-muted`}>
           <div>媒体</div>
           <div>費用計</div>
           <div>問い合わせ</div>
-          <div>見学</div>
-          <div>成約</div>
           <div>1件あたり</div>
           <div>反響係数</div>
         </div>
         {totals.map((t) => (
-          <div key={t.id} className="grid grid-cols-[1.4fr_1fr_0.7fr_0.6fr_0.6fr_1fr_0.7fr] gap-2 py-1.5 px-1 border-b border-divider text-xs text-body">
+          <div key={t.id} className="grid grid-cols-[1.4fr_1fr_0.7fr_1fr_0.7fr] gap-2 py-1.5 px-1 border-b border-divider text-xs text-body">
             <div>{t.label}</div>
             <div>{yen(t.cost)}</div>
             <div>{t.inq}</div>
-            <div>{t.visits}</div>
-            <div>{t.contracts}</div>
             <div>{t.cpi === null ? "—" : yen(t.cpi)}</div>
             <div className="font-bold">{t.coefficient.toFixed(2)}</div>
           </div>
@@ -69,8 +62,7 @@ export default function MediaResultsPanel({ media, results, properties, minInqui
             <span className="font-bold">{label(r.media_id)}</span>
             <span>{r.property_id !== null ? `物件${r.property_id}` : ""}</span>
             <span>{yen(r.cost_yen)}</span>
-            <span>問い合わせ{r.inquiries}・見学{r.visits}・成約{r.contracts}</span>
-            {r.memo && <span className="text-muted">{r.memo}</span>}
+            <span>問い合わせ{r.inquiries}</span>
             <button
               type="button"
               disabled={deleting}
@@ -89,7 +81,7 @@ export default function MediaResultsPanel({ media, results, properties, minInqui
             const data = new FormData(e.currentTarget);
             startTransition(() => action(data));
           }}
-          className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 mt-4"
+          className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2.5 mt-4"
         >
           <label className={fieldLabel}>
             媒体 *
@@ -124,22 +116,6 @@ export default function MediaResultsPanel({ media, results, properties, minInqui
           <label className={fieldLabel}>
             問い合わせ数
             <input name="inquiries" inputMode="numeric" className={small} />
-          </label>
-          <label className={fieldLabel}>
-            見学数
-            <input name="visits" inputMode="numeric" className={small} />
-          </label>
-          <label className={fieldLabel}>
-            成約（件）
-            <input name="contracts" inputMode="numeric" className={small} />
-          </label>
-          <label className={fieldLabel}>
-            入力者
-            <input name="entered_by" className={small} />
-          </label>
-          <label className={`${fieldLabel} col-span-full`}>
-            メモ
-            <input name="memo" placeholder="例：リール動画。30代の問い合わせが多い" className={small} />
           </label>
           <div className="col-span-full flex items-center gap-3">
             <button type="submit" disabled={pending} className="px-4 py-2 bg-brand rounded-md text-white text-xs font-bold cursor-pointer disabled:opacity-60">

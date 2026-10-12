@@ -6,7 +6,7 @@ import { AGE_BANDS, MARKS } from "../../../lib/scoring/constants";
 import { SCORING_TABLES, type FieldDef, type TableDef } from "../../../lib/scoring/tables";
 
 // 採点ルール表（設計書 D35）の表を /rules の画面から直す
-// 変更は scoring_revisions に残る（トリガー）。画面で入れた変更理由・関連物件・変更者も一緒に残す（Excel：変更履歴）
+// 変更は scoring_revisions に残る（トリガー）
 
 export interface ScoringFormState {
   ok?: string;
@@ -104,15 +104,6 @@ function wherePk(sql: Sql, def: TableDef, formData: FormData) {
   return parts.reduce((a, b) => sql`${a} and ${b}`);
 }
 
-/** 変更理由などを、同じトランザクションのトリガーに渡す */
-async function setReason(tx: Sql, formData: FormData) {
-  const reason = text(formData, "__reason");
-  const related = text(formData, "__related");
-  const by = text(formData, "__by");
-  await tx`select set_config('brumby.change_reason', ${reason ?? ""}, true), set_config('brumby.related_property', ${related ?? ""}, true), set_config('brumby.changed_by', ${by ?? ""}, true)`;
-  return by;
-}
-
 export async function saveScoringRow(_prev: ScoringFormState, formData: FormData): Promise<ScoringFormState> {
   try {
     const def = tableOf(formData);
@@ -121,7 +112,7 @@ export async function saveScoringRow(_prev: ScoringFormState, formData: FormData
     const sql = getSql();
     const values: Record<string, unknown> = {};
     for (const f of def.fields) {
-      if (f.pk && !insert) continue;
+      if ((f.pk || f.adminOnly) && !insert) continue;
       values[f.name] = readField(sql, formData, f);
     }
     if (def.table === "scoring_params") {
@@ -146,15 +137,13 @@ export async function saveScoringRow(_prev: ScoringFormState, formData: FormData
 }
 
 async function save(sql: Sql, def: TableDef, formData: FormData, values: Record<string, unknown>, insert: boolean) {
-  await sql.begin(async (tx) => {
-    const by = await setReason(tx as unknown as Sql, formData);
-    const row = { ...values, updated_by: by };
-    if (insert) await tx`insert into ${tx(def.table)} ${tx(row)}`;
-    else {
-      const result = await tx`update ${tx(def.table)} set ${tx(row)} where ${wherePk(tx as unknown as Sql, def, formData)}`;
-      if (result.count === 0) throw new Error("変更する行が見つかりません（ほかの人が消した可能性があります）");
-    }
-  });
+  // 変更者は入れない（取り込みのときの「import」などが残らないよう、空にする）
+  const row = { ...values, updated_by: null };
+  if (insert) await sql`insert into ${sql(def.table)} ${sql(row)}`;
+  else {
+    const result = await sql`update ${sql(def.table)} set ${sql(row)} where ${wherePk(sql, def, formData)}`;
+    if (result.count === 0) throw new Error("変更する行が見つかりません（ほかの人が消した可能性があります）");
+  }
   revalidatePath("/rules");
 }
 
@@ -163,10 +152,7 @@ export async function deleteScoringRow(_prev: ScoringFormState, formData: FormDa
     const def = tableOf(formData);
     if (!def.canDelete) throw new Error(`${def.label}の行は削除できません（「使う」を外してください）`);
     const sql = getSql();
-    await sql.begin(async (tx) => {
-      await setReason(tx as unknown as Sql, formData);
-      await tx`delete from ${tx(def.table)} where ${wherePk(tx as unknown as Sql, def, formData)}`;
-    });
+    await sql`delete from ${sql(def.table)} where ${wherePk(sql, def, formData)}`;
     revalidatePath("/rules");
     return { ok: "削除しました" };
   } catch (error) {
@@ -194,10 +180,6 @@ export async function addMediaResult(_prev: ScoringFormState, formData: FormData
       started_on: startedOn,
       cost_yen: int("cost_yen", "費用"),
       inquiries: int("inquiries", "問い合わせ数"),
-      visits: int("visits", "見学数"),
-      contracts: int("contracts", "成約"),
-      memo: text(formData, "memo"),
-      entered_by: text(formData, "entered_by"),
     };
     const sql = getSql();
     await sql`insert into media_results ${sql(row)}`;

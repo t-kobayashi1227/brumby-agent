@@ -388,7 +388,16 @@ export default function StrategyClient(props: StrategyClientProps) {
             </div>
           )}
 
-          {props.scoring && props.mediaEvaluation.length > 0 && <MediaEvaluation rows={props.mediaEvaluation} scoring={props.scoring} />}
+          {props.scoring && props.mediaEvaluation.length > 0 && (
+            // 予算を変えてみたときは、配分の額を円グラフと同じシミュレーションの値にそろえる
+            <MediaEvaluation
+              rows={props.mediaEvaluation.map((r) => {
+                const m = media.find((x) => x.id === r.id);
+                return m ? { ...r, amount: m.amount, initialManYen: m.initialManYen } : r;
+              })}
+              scoring={props.scoring}
+            />
+          )}
 
           {/* いつ */}
           <div className={`${card} p-5`}>

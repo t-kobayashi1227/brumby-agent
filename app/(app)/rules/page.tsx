@@ -108,7 +108,7 @@ function summaryOf(table: string, r: Row): React.ReactNode {
             {fmt(r.ward)}
             {fmt(r.town)}
           </b>
-          {fmt(r.score)}点<span className="ml-2 text-muted">市内{fmt(r.city_rank)}位</span>
+          {fmt(r.score)}点
         </>
       );
     case "media_channels":
@@ -142,7 +142,7 @@ async function TableEditor({ def, personaIds, where }: { def: TableDef; personaI
       <div className="text-[11px] text-muted mt-1 mb-3 leading-[1.7]">
         {def.note}（Excel：{def.sheet}）
       </div>
-      {rows.length === 0 && <div className="text-xs text-muted py-3">行がありません。npm run import-scoring で Excel を取り込むか、下の「行を追加」で入れてください。</div>}
+      {rows.length === 0 && <div className="text-xs text-muted py-3">行がありません。npm run import-scoring で Excel を{def.canAdd ? "取り込むか、下の「行を追加」で入れて" : "取り込んで"}ください。</div>}
       {rows.map((r) => (
         <details key={def.fields.filter((f) => f.pk).map((f) => String(r[f.name])).join("/")} className="border-t border-line">
           <summary className="py-2.5 text-[13px] text-body cursor-pointer select-none">{summaryOf(def.table, r)}</summary>
@@ -261,8 +261,8 @@ export default async function ScoringRulesPage({ searchParams }: { searchParams:
   else if (tab === "media") {
     const config = await loadScoringConfig(sql);
     const coefficients = responseCoefficients(config);
-    const results = await sql<{ id: number; property_id: number | null; media_id: string; started_on: Date | null; cost_yen: number; inquiries: number; visits: number; contracts: number; memo: string | null }[]>`
-      select id, property_id, media_id, started_on, cost_yen, inquiries, visits, contracts, memo from media_results order by started_on desc nulls last, id desc
+    const results = await sql<{ id: number; property_id: number | null; media_id: string; started_on: Date | null; cost_yen: number; inquiries: number }[]>`
+      select id, property_id, media_id, started_on, cost_yen, inquiries from media_results order by started_on desc nulls last, id desc
     `;
     const properties = await sql<{ id: number; name: string }[]>`select id, name from properties order by id`;
     body = (

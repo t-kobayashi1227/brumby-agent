@@ -24,6 +24,8 @@ export interface FieldDef {
   options?: readonly string[];
   /** 主キーの列（追加のときだけ入力できる） */
   pk?: boolean;
+  /** 管理者だけが直す列。変更のフォームには出さず、保存でも変えない（追加のときは入力する） */
+  adminOnly?: boolean;
   /** 入力欄の幅（Tailwind の col-span） */
   wide?: boolean;
   hint?: string;
@@ -52,7 +54,7 @@ export const SCORING_TABLES: Record<string, TableDef> = {
     canAdd: true,
     canDelete: false,
     fields: [
-      { name: "id", label: "ID", type: "text", pk: true, required: true, hint: "A〜H" },
+      { name: "id", label: "ID", type: "text", pk: true, adminOnly: true, required: true, hint: "A〜H" },
       { name: "label", label: "ターゲット候補", type: "text", required: true, wide: true },
       { name: "description", label: "世帯像・重視すること", type: "longtext", wide: true },
       { name: "rep_age", label: "代表年齢", type: "int", required: true },
@@ -73,19 +75,17 @@ export const SCORING_TABLES: Record<string, TableDef> = {
     sheet: "採点ルール",
     note: "1行＝1ルール。項目の値が下限〜上限（空欄は制限なし）なら該当。点＝適合度（◎+2〜×−2）×重視度×1段階の点数。",
     orderBy: "sort_order, id",
-    canAdd: true,
+    canAdd: false,
     canDelete: true,
     fields: [
-      { name: "id", label: "ID", type: "text", pk: true, required: true, hint: "例：R60" },
-      { name: "layer", label: "層", type: "enum", options: ["物件", "生活環境", "市場"], required: true },
-      { name: "item_key", label: "項目キー", type: "text", required: true, hint: "項目の重視度にあるキー" },
+      { name: "id", label: "ID", type: "text", pk: true, adminOnly: true, required: true, hint: "例：R60" },
+      { name: "layer", label: "層", type: "enum", options: ["物件", "生活環境", "市場"], adminOnly: true, required: true },
+      { name: "item_key", label: "項目キー", type: "text", adminOnly: true, required: true, hint: "項目の重視度にあるキー" },
       { name: "lower_bound", label: "下限", type: "num" },
       { name: "upper_bound", label: "上限", type: "num" },
       { name: "reason", label: "根拠の表示文（評価理由に出す）", type: "text", wide: true, required: true },
       { name: "fit", label: "適合度", type: "persona_mark", wide: true },
       { name: "basis_class", label: "点数の根拠区分", type: "enum", options: ["統計", "仮説", "BRUMBY確認", "BRUMBY実務"] },
-      { name: "basis_note", label: "点数の根拠メモ", type: "longtext", wide: true },
-      { name: "source", label: "出典", type: "text" },
       { name: "exclusive_group", label: "排他グループ", type: "text", hint: "空なら項目キー" },
       { name: "sort_order", label: "並び順", type: "int" },
       { name: "enabled", label: "使う", type: "bool" },
@@ -97,13 +97,12 @@ export const SCORING_TABLES: Record<string, TableDef> = {
     sheet: "項目の重視度",
     note: "項目ごとに、各ペルソナがどれだけ重視するか（0=関係ない／1=少し気にする／2=気にする／3=とても重視）。",
     orderBy: "sort_order, key",
-    canAdd: true,
+    canAdd: false,
     canDelete: false,
     fields: [
-      { name: "key", label: "項目キー", type: "text", pk: true, required: true },
-      { name: "layer", label: "層", type: "enum", options: ["物件", "生活環境", "市場"], required: true },
+      { name: "key", label: "項目キー", type: "text", pk: true, adminOnly: true, required: true },
+      { name: "layer", label: "層", type: "enum", options: ["物件", "生活環境", "市場"], adminOnly: true, required: true },
       { name: "importance", label: "重視度", type: "persona_num", wide: true },
-      { name: "note", label: "メモ", type: "longtext", wide: true },
       { name: "sort_order", label: "並び順", type: "int" },
     ],
   },
@@ -116,10 +115,9 @@ export const SCORING_TABLES: Record<string, TableDef> = {
     canAdd: false,
     canDelete: false,
     fields: [
-      { name: "key", label: "項目キー", type: "text", pk: true, required: true },
+      { name: "key", label: "項目キー", type: "text", pk: true, adminOnly: true, required: true },
       { name: "label", label: "項目", type: "text", required: true, wide: true },
       { name: "value", label: "値", type: "num", required: true },
-      { name: "note", label: "メモ", type: "longtext", wide: true },
     ],
   },
   competitor_items: {
@@ -131,12 +129,11 @@ export const SCORING_TABLES: Record<string, TableDef> = {
     canAdd: false,
     canDelete: false,
     fields: [
-      { name: "key", label: "項目キー", type: "text", pk: true, required: true },
+      { name: "key", label: "項目キー", type: "text", pk: true, adminOnly: true, required: true },
       { name: "label", label: "項目", type: "text", required: true },
       { name: "direction", label: "良い方向", type: "enum", options: ["1", "-1"], required: true },
       { name: "tie_margin", label: "同等とみなす差", type: "num", required: true },
       { name: "importance", label: "重視度", type: "persona_num", wide: true },
-      { name: "note", label: "メモ", type: "longtext", wide: true },
     ],
   },
   market_reference: {
@@ -169,7 +166,6 @@ export const SCORING_TABLES: Record<string, TableDef> = {
       { name: "ward", label: "区", type: "text", pk: true, required: true },
       { name: "town", label: "町", type: "text", pk: true, required: true },
       { name: "score", label: "人気スコア", type: "num", required: true },
-      { name: "city_rank", label: "市内順位", type: "int" },
     ],
   },
   media_channels: {
@@ -181,12 +177,11 @@ export const SCORING_TABLES: Record<string, TableDef> = {
     canAdd: true,
     canDelete: false,
     fields: [
-      { name: "id", label: "ID", type: "text", pk: true, required: true, hint: "英小文字（例：instagram）" },
+      { name: "id", label: "ID", type: "text", pk: true, adminOnly: true, required: true, hint: "英小文字（例：instagram）" },
       { name: "label", label: "媒体", type: "text", required: true },
       { name: "stat_name", label: "使う統計", type: "text", hint: "媒体の利用率の統計名" },
       { name: "flat_reach", label: "一律の届きやすさ", type: "num" },
       { name: "format_example", label: "形式の例", type: "longtext", wide: true },
-      { name: "source", label: "届きやすさの出典", type: "longtext", wide: true },
       { name: "sort_order", label: "並び順", type: "int" },
       { name: "enabled", label: "使う", type: "bool" },
     ],
@@ -203,7 +198,6 @@ export const SCORING_TABLES: Record<string, TableDef> = {
       { name: "stat_name", label: "統計の名前", type: "text", pk: true, required: true },
       { name: "rates", label: "利用率（%）", type: "age_num", wide: true },
       { name: "all_ages", label: "全年代", type: "num", required: true },
-      { name: "metric", label: "指標", type: "text" },
     ],
   },
 };

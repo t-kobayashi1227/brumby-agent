@@ -118,26 +118,6 @@ function Field({ f, value, personaIds, editablePk }: { f: FieldDef; value: unkno
   }
 }
 
-/** 変更理由・関連物件・変更者（Excel：変更履歴の列） */
-function ReasonFields() {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr] gap-2 col-span-full rounded-md bg-subtle p-2.5">
-      <label className={fieldLabel}>
-        変更理由
-        <input name="__reason" placeholder="例：B001でBRUMBY判断とズレ。購入力を高く見すぎていた" className={small} />
-      </label>
-      <label className={fieldLabel}>
-        関連する物件ID
-        <input name="__related" placeholder="例：B001" className={small} />
-      </label>
-      <label className={fieldLabel}>
-        変更者
-        <input name="__by" placeholder="例：BRUMBY 担当者名" className={small} />
-      </label>
-    </div>
-  );
-}
-
 export function ScoringRowForm({ def, values, personaIds, mode }: { def: TableDef; values: Values; personaIds: string[]; mode: "insert" | "update" }) {
   const [state, action, pending] = useActionState<ScoringFormState, FormData>(saveScoringRow, {});
   const [delState, delAction, deleting] = useActionState<ScoringFormState, FormData>(deleteScoringRow, {});
@@ -161,10 +141,10 @@ export function ScoringRowForm({ def, values, personaIds, mode }: { def: TableDe
         className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5"
       >
         {hidden}
-        {def.fields.map((f) => (
+        {/* 管理者だけが直す列（ID・層・項目キー）は、変更のフォームに出さない */}
+        {def.fields.filter((f) => mode === "insert" || !f.adminOnly).map((f) => (
           <Field key={f.name} f={f} value={values[f.name]} personaIds={personaIds} editablePk={mode === "insert"} />
         ))}
-        <ReasonFields />
         <div className="col-span-full flex items-center gap-3">
           <button type="submit" disabled={pending} className="px-4 py-2 bg-brand rounded-md text-white text-xs font-bold cursor-pointer disabled:opacity-60">
             {pending ? "保存中…" : mode === "insert" ? "追加する" : "保存する"}
@@ -187,7 +167,6 @@ export function ScoringRowForm({ def, values, personaIds, mode }: { def: TableDe
           {pks.map((f) => (
             <input key={f.name} type="hidden" name={`__pk.${f.name}`} value={str(values[f.name])} />
           ))}
-          <input name="__reason" placeholder="削除の理由" className="px-2 py-1 border border-field rounded-md text-[12px]" />
           <button type="submit" disabled={deleting} className="px-3 py-1 rounded-md border border-[#f3c4c4] text-[#b91c1c] text-xs cursor-pointer">
             削除
           </button>
