@@ -171,6 +171,7 @@ describe("入力の読み取り", () => {
     const facts = [
       { key: "facility.station_nearest", value: 1600, status: "ok" as const, datasetVersionIds: [1] },
       { key: "facility.supermarket_nearest", value: 480, status: "ok" as const, datasetVersionIds: [3] },
+      { key: "facility.bus_stop_nearest", value: 217, status: "ok" as const, datasetVersionIds: [38] },
       { key: "target.age_65plus_ratio", value: 0.3, comparison: 0.25, status: "ok" as const, datasetVersionIds: [2] },
     ];
     const config = baseConfig({ market: [{ ward: "中央区", ageClass: "新築", priceManYen: 3500, buildingSqm: null, landSqm: null, ageYears: null, n: null }] });
@@ -179,6 +180,8 @@ describe("入力の読み取り", () => {
     expect(r.values["スーパー_m"]).toMatchObject({ value: 480, factKey: "facility.supermarket_nearest" });
     expect(buildInputs(config, { ...property, manual_metrics: { スーパー_m: 300 } }, facts, []).values["スーパー_m"])
       .toMatchObject({ value: 300, source: "手入力" });
+    expect(r.values["バス停_m"]).toMatchObject({ value: 217, factKey: "facility.bus_stop_nearest" });
+    expect(r.values["公園_m"]).toMatchObject({ value: null, source: "データなし（手入力の欄あり）" });
     expect(r.values["高齢者比率_市比"]).toMatchObject({ value: 1.2 });
     expect(r.values["部屋数"].value).toBe(4);
     expect(r.values["築年数"].value).toBe(0);

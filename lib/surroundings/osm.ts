@@ -4,6 +4,30 @@ import { DEFAULT_RADIUS_M, OSM_SUPERMARKET } from "./layers";
 
 const ENDPOINT = "https://overpass-api.de/api/interpreter";
 const ATTRIBUTION = "© OpenStreetMap contributors（https://www.openstreetmap.org/copyright）";
+// Overpass は名乗らない（汎用の User-Agent の）リクエストを 406 で断るので、アプリ名と連絡先を付ける
+const USER_AGENT = "brumby/0.1 (+https://github.com/Cloud-Nature-Inc/brumby)";
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Overpass に問い合わせる。混んでいるとき（429・5xx）だけ間隔を空けて1回やり直す
+ * 画面から1回の呼び出しで動くので、やり直しは1回まで（35秒×2＋待ち3秒）
+ */
+async function queryOverpass(query: string): Promise<unknown> {
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", "User-Agent": USER_AGENT },
+      body: new URLSearchParams({ data: query }),
+      signal: AbortSignal.timeout(35_000),
+      cache: "no-store",
+    });
+    if (response.ok) return response.json();
+    const busy = response.status === 429 || response.status >= 500;
+    if (!busy || attempt >= 1) throw new Error(`OpenStreetMap API: HTTP ${response.status}${busy ? "（混んでいます。少し時間をおいて取り直してください）" : ""}`);
+    await sleep(3000);
+  }
+}
 
 interface OsmElement {
   type?: unknown;
@@ -45,15 +69,7 @@ export async function fetchSupermarkets(sql: Sql, propertyId: number, radiusM = 
 
   try {
     const query = `[out:json][timeout:25];nwr["shop"="supermarket"](around:${radiusM},${property.lat},${property.lon});out center;`;
-    const response = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
-      body: new URLSearchParams({ data: query }),
-      signal: AbortSignal.timeout(35_000),
-      cache: "no-store",
-    });
-    if (!response.ok) throw new Error(`OpenStreetMap API: HTTP ${response.status}`);
-    const supermarkets = parseSupermarkets(await response.json());
+    const supermarkets = parseSupermarkets(await queryOverpass(query));
     result.featuresInTiles = supermarkets.length;
 
     const [version] = await sql<{ id: number }[]>`

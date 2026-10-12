@@ -116,11 +116,13 @@ export function buildInputs(
   fromFact("駅_m", "facility.station_nearest");
   fromFact("小学校_m", "facility.elementary_nearest");
   fromFact("スーパー_m", "facility.supermarket_nearest");
+  fromFact("病院_m", "facility.medical_nearest");
+  fromFact("バス停_m", "facility.bus_stop_nearest");
   fromFact("保育園_800m内", "facility.nursery_count_800m");
   fromFact("子あり世帯比率_市比", "target.households_with_under18_ratio", true);
   fromFact("高齢者比率_市比", "target.age_65plus_ratio", true);
   // 自動で取れないもの（国勢調査などの追加は次の段階）
-  for (const k of ["バス停_m", "病院_m", "公園_m", "単身世帯比率_市比", "子育て世代_5年変化"]) manualOnly(k);
+  for (const k of ["公園_m", "単身世帯比率_市比", "子育て世代_5年変化"]) manualOnly(k);
 
   // 区・町と相場
   const parsed = wardTownFromAddress(property.address);

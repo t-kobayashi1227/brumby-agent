@@ -459,6 +459,24 @@ export default function StrategyClient(props: StrategyClientProps) {
               <SourceNote className="mt-3">© OpenStreetMap contributors</SourceNote>
             </div>
           )}
+          {props.nearbyLists.medicalRadiusM !== null && (
+            <div className={`${card} p-5`}>
+              <div className="text-[13px] font-bold text-ink">周辺の医療機関</div>
+              <div className="text-[11px] text-muted mt-1 mb-3.5">
+                内科のある病院・診療所を、直線距離の近い順に最大10件（採点の「病院」の距離はこの最寄り）。徒歩は「直線×1.3、分速80m」の目安です。データは令和2年度時点のため、閉院・開院が反映されていないことがあります。
+              </div>
+              {props.nearbyLists.nearestHospital && (
+                <div className="mb-3 text-xs text-body">
+                  最寄りの病院（20床以上）：<span className="font-bold text-ink">{props.nearbyLists.nearestHospital.name}</span>
+                  <span className="ml-1.5 text-muted">
+                    徒歩{props.nearbyLists.nearestHospital.walkMin}分・{props.nearbyLists.nearestHospital.straightM.toLocaleString("ja-JP")}m
+                  </span>
+                </div>
+              )}
+              <FacilityRows title="内科のある病院・診療所" items={props.nearbyLists.medical} empty="この範囲にはありません" />
+              <SourceNote className="mt-3">出典：国土交通省 不動産情報ライブラリ（国土数値情報「医療機関（令和2年度）」）を加工して作成</SourceNote>
+            </div>
+          )}
           {byKey("property_location") && <AnswerSection section={byKey("property_location")!} facts={facts} />}
           <div className="text-xs">
             <Link href={`/research/result?property=${propertyId}`} className="text-primary underline">競合物件との比較（競合診断）を見る</Link>

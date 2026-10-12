@@ -75,7 +75,7 @@ export const mlitBusStops: IngestJob = {
           x.routes, x.note,
           extensions.st_setsrid(extensions.st_makepoint(x.lon, x.lat), 4326),
           x.raw
-        from jsonb_to_recordset(${JSON.stringify(chunk)}::jsonb) as x(
+        from jsonb_to_recordset(${sql.json(chunk as never)}) as x(
           source_feature_id text, name text, operator_name text,
           routes jsonb, note text, lon double precision, lat double precision, raw jsonb
         )

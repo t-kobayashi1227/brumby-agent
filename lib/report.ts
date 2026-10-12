@@ -311,6 +311,8 @@ export function nearbyFacilities(facts: ReportFact[]): NearbyFacility[] {
     { key: "facility.junior_high_nearest", label: "中学校" },
     { key: "facility.station_nearest", label: "駅" },
     { key: "facility.supermarket_nearest", label: "スーパー" },
+    { key: "facility.medical_nearest", label: "内科（病院・診療所）" },
+    { key: "facility.bus_stop_nearest", label: "バス停" },
   ];
   const items = specs
     .map((s) => {
@@ -334,6 +336,11 @@ export interface NearbyLists {
   nurseryRadiusM: number | null;
   supermarkets: NearbyListItem[];
   supermarketRadiusM: number | null;
+  /** 内科のある病院・診療所の近い順に10件 */
+  medical: NearbyListItem[];
+  medicalRadiusM: number | null;
+  /** 病院（20床以上）の最寄り */
+  nearestHospital: NearbyListItem | null;
 }
 
 /**
@@ -349,6 +356,8 @@ export function nearbyLists(facts: ReportFact[]): NearbyLists {
   };
   const nursery = findFact(facts, "facility.nursery_count_800m");
   const supermarket = findFact(facts, "facility.supermarket_nearest");
+  const medical = findFact(facts, "facility.medical_nearest");
+  const hospital = medical?.status === "ok" ? ((medical.basis as { nearest_hospital?: Raw | null } | null)?.nearest_hospital ?? null) : null;
   return {
     elementary: list("facility.elementary_nearest", "nearby"),
     juniorHigh: list("facility.junior_high_nearest", "nearby"),
@@ -358,6 +367,11 @@ export function nearbyLists(facts: ReportFact[]): NearbyLists {
     supermarketRadiusM: supermarket?.status === "ok" || supermarket?.status === "insufficient"
       ? (supermarket.scope as { search_radius_m?: number } | null)?.search_radius_m ?? null
       : null,
+    medical: list("facility.medical_nearest", "nearby"),
+    medicalRadiusM: medical?.status === "ok" || medical?.status === "insufficient"
+      ? (medical.scope as { search_radius_m?: number } | null)?.search_radius_m ?? null
+      : null,
+    nearestHospital: hospital ? { name: hospital.name, kind: "病院", straightM: hospital.straight_m, walkMin: hospital.walk_min } : null,
   };
 }
 

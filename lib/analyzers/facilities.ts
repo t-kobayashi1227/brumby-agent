@@ -2,6 +2,7 @@ import type { Analyzer, AnalyzerContext, FactDraft } from "../types";
 import { featuresAtPoint, fetchRecord, notFetched, walking } from "./common";
 import { singleVersion } from "./versions";
 import { OSM_SUPERMARKET } from "../surroundings/layers";
+import { hasInternalMedicine } from "./medical";
 
 // ④ 周辺施設（設計書 5.3）：最寄りの学校・保育園・駅、学区、施設の数、用途地域
 // 距離は直線。徒歩の目安は「直線×1.3、分速80m」。最寄りの学校＝通う学校（学区）とは限らない
@@ -236,6 +237,109 @@ async function nearestSupermarket(ctx: AnalyzerContext): Promise<FactDraft> {
   };
 }
 
+/** バス停を探す範囲（m）。採点ルール表は 800m以上 をまとめて扱うので、この範囲で足りる */
+const BUS_STOP_SEARCH_M = 5000;
+
+/**
+ * 最寄りのバス停（国土数値情報 P11。bus_stops に県ごとの版で取り込み済み）
+ * 物件の登録のときに取りに行くのではなく、取り込んだ全件から探す
+ * 系統（routes[].name）は1つの欄に複数の系統がカンマ区切りで入ることがあるので、分けて数える
+ */
+async function nearestBusStop(ctx: AnalyzerContext): Promise<FactDraft> {
+  const key = "facility.bus_stop_nearest";
+  const versions = ctx.versions.get("mlit_ksj/P11") ?? [];
+  const scope = { type: "nearest", search_radius_m: BUS_STOP_SEARCH_M };
+  if (!versions.length) return { key, status: "not_available", scope, basis: { reason: "バス停のデータ（国土数値情報 P11）を取り込んでいません" }, datasetVersionIds: [] };
+  const ids = versions.map((v) => v.id);
+  const base = { datasetVersionIds: ids, attribution: versions[0].attribution };
+
+  const list = await ctx.sql<{ name: string; operator_name: string | null; routes: { name: string }[]; distance_m: number }[]>`
+    select b.name, b.operator_name, b.routes,
+      extensions.st_distance(b.geom::extensions.geography, p.geom::extensions.geography) as distance_m
+    from bus_stops b, properties p
+    where p.id = ${ctx.property.id} and b.dataset_version_id = any(${ids})
+      and extensions.st_dwithin(b.geom::extensions.geography, p.geom::extensions.geography, ${BUS_STOP_SEARCH_M})
+    order by b.geom::extensions.geography <-> p.geom::extensions.geography
+    limit 10
+  `;
+  const found = list[0] ?? null;
+  if (!found) {
+    return { key, status: "insufficient", scope, basis: { reason: `半径${BUS_STOP_SEARCH_M}m以内にバス停がありません（物件の県のデータを取り込んでいるか確認）` }, ...base };
+  }
+  const w = walking(found.distance_m);
+  const routes = [...new Set(found.routes.flatMap((r) => r.name.split(",")).map((s) => s.trim()).filter(Boolean))];
+  return {
+    key,
+    value: w.straight_m,
+    valueText: `${found.name}（${found.operator_name ?? "事業者不明"}、直線${w.straight_m}m、徒歩約${w.walk_min}分）`,
+    unit: "m",
+    scope,
+    basis: {
+      name: found.name,
+      operator: found.operator_name,
+      routes,
+      route_count: routes.length,
+      ...w,
+      rule: "直線×1.3、分速80m",
+      note: "本数・行き先は国土数値情報にないため別途確認",
+      // 近い順に10件（上り・下りで同じ名前のバス停が並ぶことがある）
+      nearby: list.map((r) => listItem(r.name, r.operator_name, r.distance_m)),
+    },
+    status: "ok",
+    ...base,
+  };
+}
+
+/**
+ * 最寄りの医療機関（XKT010＝国土数値情報「医療機関（令和2年度）」）
+ * 採点ルール表の「病院_m」に使う距離は、内科のある病院・診療所の最寄り（2026-10-12に決定）
+ * 皮膚科・眼科などだけの診療所や歯科診療所は数えない。判定は lib/analyzers/medical.ts
+ * 病院（20床以上）だけの最寄りも basis.nearest_hospital に残す（画面に出す）
+ */
+async function nearestMedical(ctx: AnalyzerContext): Promise<FactDraft> {
+  const key = "facility.medical_nearest";
+  const version = singleVersion(ctx.versions, "reinfolib/XKT010");
+  const record = await fetchRecord(ctx, "XKT010");
+  const scope = { type: "nearest", search_radius_m: record?.keep_m ?? null, kinds: ["病院", "診療所"], subject: "内科" };
+  if (!version || !record || record.status === "failed") return notFetched(key, record, scope);
+
+  const kindOf = (p: Record<string, unknown>) => String(p.P04_001_name_ja ?? "");
+  const isInternal = (p: Record<string, unknown>) => (kindOf(p) === "病院" || kindOf(p) === "診療所") && hasInternalMedicine(p.medical_subject_ja ?? p.P04_004);
+  const list = await nearestList(ctx, "XKT010", record.keep_m, isInternal, 10);
+  const found = list[0] ?? null;
+  if (!found) {
+    return { key, status: "insufficient", scope, basis: { reason: `半径${record.keep_m}m以内に内科のある病院・診療所がありません` }, datasetVersionIds: [version.id], attribution: version.attribution };
+  }
+  const [hospital] = await nearestList(ctx, "XKT010", record.keep_m, (p) => kindOf(p) === "病院", 1);
+  const w = walking(found.distance_m);
+  const name = String(found.properties.P04_002_ja ?? "（名前なし）");
+  const kind = kindOf(found.properties);
+  return {
+    key,
+    value: w.straight_m,
+    valueText: `${name}（内科のある${kind}、直線${w.straight_m}m、徒歩約${w.walk_min}分）`,
+    unit: "m",
+    scope,
+    basis: {
+      name,
+      kind,
+      subjects: found.properties.medical_subject_ja ?? found.properties.P04_004 ?? null,
+      address: found.properties.P04_003_ja ?? null,
+      ...w,
+      rule: "直線×1.3、分速80m",
+      note: "内科のある病院・診療所の最寄り（皮膚科・眼科などだけの診療所、歯科診療所は除く）",
+      nearest_hospital: hospital
+        ? { name: String(hospital.properties.P04_002_ja ?? "（名前なし）"), ...walking(hospital.distance_m) }
+        : null,
+      // 近い順に10件（画面の「周辺の医療機関」）
+      nearby: list.map((r) => listItem(r.properties.P04_002_ja, kindOf(r.properties), r.distance_m)),
+    },
+    status: "ok",
+    datasetVersionIds: [version.id],
+    attribution: version.attribution,
+  };
+}
+
 async function zoning(ctx: AnalyzerContext): Promise<FactDraft> {
   const key = "area.zoning";
   const version = singleVersion(ctx.versions, "reinfolib/XKT002");
@@ -282,6 +386,8 @@ export const facilitiesAnalyzer: Analyzer = {
     await nurseryCount(ctx, "facility.nursery_count_800m", 800),
     await nearestStation(ctx),
     await nearestSupermarket(ctx),
+    await nearestMedical(ctx),
+    await nearestBusStop(ctx),
     await zoning(ctx),
   ],
 };

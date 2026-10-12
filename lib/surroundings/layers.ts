@@ -19,6 +19,8 @@ export const LAYERS: Layer[] = [
   { apiId: "XKT006", name: "学校", mode: "radius", zoom: 13 },
   { apiId: "XKT007", name: "保育園・幼稚園等", mode: "radius", zoom: 13 },
   { apiId: "XKT015", name: "駅別乗降客数", mode: "radius", zoom: 13 },
+  // 国土数値情報「医療機関（令和2年度）」。病院・診療所・歯科診療所（2026-10-12に追加）
+  { apiId: "XKT010", name: "医療機関（病院・診療所）", mode: "radius", zoom: 13 },
   { apiId: "XKT013", name: "将来推計人口250mメッシュ", mode: "radius", zoom: 13 },
   { apiId: "XKT004", name: "小学校区", mode: "point", zoom: 13, keepM: 0 },
   { apiId: "XKT005", name: "中学校区", mode: "point", zoom: 13, keepM: 0 },
