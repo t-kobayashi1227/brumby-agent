@@ -413,3 +413,39 @@ GET https://www.reinfolib.mlit.go.jp/ex-api/external/XKT026?response_format=geoj
 - 例のタイル（ズーム15の 29039/12651）は、物件1（上近江三丁目）を含むタイル
 - XKT系はすべて同じ形（`/XKTnnn?response_format=geojson&z=…&x=…&y=…`）。取れるズームはAPIごとに違う
 - 物件の経度・緯度から、半径（または300m）を囲むタイルを計算して、その分だけ呼ぶ（`lib/surroundings/fetch.ts` の `tilesAround`）
+
+---
+
+## 採点ルール表（BRUMBY様と作成した Excel「採点ルール表_初版.xlsx」v0.26。設計書 D35）
+
+公開データではなく、評価の設定（ペルソナ・採点ルール・重み・相場の中央値・エリア人気・媒体の利用率など）。Excel は Git に入れない。
+
+### 取り込みの経過
+- 2026-10-12：マイグレーション `20261012100000_scoring.sql` を共有DBに反映
+  - 先に `npx supabase migration repair --status applied 20261006100000` で履歴を直した。10-06 の表・列は入っていたのに、履歴に記録がなかった
+  - `20261004120000_narratives_failed.sql` を `backup/develop-before-reset` から手元に戻した。DBには入っていたが、develop のやり直しで手元から消えていた
+- 2026-10-12：`npm run import-scoring -- "採点ルール表_初版.xlsx"` で初期値を取り込み（設定の版 395）
+
+| 表 | 件数 |
+|---|---:|
+| `personas` | 6（A〜F。G・Hは予備枠で空） |
+| `scoring_items` | 19 |
+| `scoring_rules` | 59（R01〜R59） |
+| `scoring_params` | 32 |
+| `competitor_items` | 8 |
+| `market_reference` | 24（8区×3区分） |
+| `area_popularity` | 198 |
+| `media_channels` / `media_usage_rates` | 11 / 8 |
+| `media_results` | 0（Excel は記入例だけ） |
+| `scoring_revisions`（Excel の変更履歴） | 30 |
+
+### 確かめたこと
+- DB から読んだ設定（`lib/scoring/load.ts`）と、Excel から読んだ設定（`scripts/scoring/parse.ts`）が、全部の表で一致した
+- 物件1（中央区・新築戸建 3,780万円・4LDK、競合3件、総予算30万円の入力あり）を分析した（実行40）
+  - 第1ターゲット：小中学生のいる家族 82点（世帯年収600万円以上）
+  - 第2・第3：若い夫婦 50.1点、二世帯 43.5点
+  - 訴求：居室数（強く訴求）、土地面積（訴求）
+  - 売れやすさ：57点（標準）
+  - 媒体：Instagram・YouTube・LINE・ポータル・Google検索広告
+- バス停・スーパー・病院・公園・単身世帯比率・5年変化は自動で取れないため、手入力がない限り「データなし」で採点から外れる
+- AIの文章は API キーの設定で失敗した（`anthropic-workspace-id` が必要なキー）。採点とは関係ない

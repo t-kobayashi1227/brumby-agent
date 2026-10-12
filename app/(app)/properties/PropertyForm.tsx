@@ -1,9 +1,11 @@
 "use client";
 
-import { startTransition, useActionState } from "react";
+import { startTransition, useActionState, useRef } from "react";
 import { PROPERTY_TYPES } from "../../../lib/rules/describe";
+import { ITEM_LABEL, MANUAL_METRIC_KEYS } from "../../../lib/scoring/constants";
 import { card, fieldLabel, input, btnPrimary } from "../../_lib/ui";
 import { saveProperty, type PropertyFormState } from "./actions";
+import PhotoField, { type PhotoChange } from "./PhotoField";
 
 // 物件の登録・変更のフォーム（設計書 7章、D15）
 // 総予算は入力があればそれを使い、空ならルール表の提案値を使う（判断カードに「入力値／提案値」を残す）
@@ -24,11 +26,43 @@ export interface PropertyValues {
   total_budget_man_yen: number | null;
   sales_deadline: string | null;
   sales_goal: string | null;
+  /** 採点ルール表（D35）に使う値 */
+  age_years: number | null;
+  rooms: number | null;
+  is_hiraya: boolean | null;
+  has_garden: boolean | null;
+  ward: string | null;
+  town: string | null;
+  manual_metrics: Record<string, number> | null;
+  /** 今の写真の URL（写真がなければ null。DB の列ではない） */
+  photo_url?: string | null;
 }
+
+/** 新潟市の8区（採点ルール表の相場・エリア人気は区ごと） */
+const WARDS = ["北区", "東区", "中央区", "江南区", "秋葉区", "南区", "西区", "西蒲区"];
+
+/** 手入力の欄の単位と例 */
+const MANUAL_HINT: Record<string, string> = {
+  バス停_m: "m（例：250）",
+  スーパー_m: "m（例：480）",
+  病院_m: "m（例：1200）",
+  公園_m: "m（例：320）",
+  駅_m: "m。空欄なら自動（直線）",
+  小学校_m: "m。空欄なら自動（直線）",
+  保育園_800m内: "か所。空欄なら自動",
+  子あり世帯比率_市比: "市平均=1。空欄なら自動",
+  高齢者比率_市比: "市平均=1。空欄なら自動",
+  単身世帯比率_市比: "市平均=1（例：0.8）",
+  子育て世代_5年変化: "1=増減なし（例：1.08）",
+  相場_万円: "万円。空欄なら区×築年数の中央値",
+};
+
+const boolValue = (v: boolean | null) => (v === null ? "" : v ? "1" : "0");
 
 const EMPTY: PropertyValues = {
   name: "", property_type: "新築戸建", price_man_yen: null, address: "", area_class: null, layout: null, land_sqm: null, building_sqm: null,
   parking: null, access: null, features: null, total_budget_man_yen: null, sales_deadline: null, sales_goal: null,
+  age_years: null, rooms: null, is_hiraya: null, has_garden: null, ward: null, town: null, manual_metrics: null,
 };
 
 /** 販促目的の例（自由に書いてもよい） */
@@ -51,6 +85,8 @@ function Section({ title, note, children }: { title: string; note?: string; chil
 export default function PropertyForm({ values = EMPTY }: { values?: PropertyValues }) {
   const [state, formAction, pending] = useActionState<PropertyFormState, FormData>(saveProperty, {});
   const v = values;
+  // 写真は縮めたものを送信のときに入れる（元の大きな写真は送らない）
+  const photo = useRef<PhotoChange | null>(null);
 
   return (
     // action={formAction} にすると、保存に失敗したときも入力が元に戻ってしまう（React の form の自動リセット）ため、送信を自分で行う
@@ -58,6 +94,12 @@ export default function PropertyForm({ values = EMPTY }: { values?: PropertyValu
       onSubmit={(e) => {
         e.preventDefault();
         const data = new FormData(e.currentTarget);
+        const p = photo.current;
+        if (p?.blob) {
+          data.set("photo", p.blob, "photo.jpg");
+          data.set("photo_width", String(p.width ?? ""));
+          data.set("photo_height", String(p.height ?? ""));
+        } else if (p?.remove) data.set("photo_remove", "1");
         startTransition(() => formAction(data));
       }}
       className={`${card} p-6 grid gap-7`}
@@ -95,6 +137,7 @@ export default function PropertyForm({ values = EMPTY }: { values?: PropertyValu
           <input name="address" defaultValue={v.address} required placeholder="例：新潟市中央区上近江1丁目2-3" className={input} />
           <span className="text-[11px] text-muted">保存すると、国土地理院の住所検索で位置（緯度経度）を取ります。地図のピンで確かめてください</span>
         </label>
+        <PhotoField currentUrl={v.photo_url ?? null} onChange={(c) => (photo.current = c)} />
       </Section>
 
       <Section title="建物・設備" note="特徴に書いた設備（ZEH・床暖房など）だけが、AIの文章や訴求に使われます。氏名・連絡先は書かないでください">
@@ -126,7 +169,58 @@ export default function PropertyForm({ values = EMPTY }: { values?: PropertyValu
         </label>
       </Section>
 
-      <Section title="販売の条件" note="総予算を空欄にすると、ルール表の提案値を使います（販売戦略の画面で「入力値／提案値」を区別して表示）">
+      <Section title="採点に使う情報" note="ターゲットの評価（採点ルール表）に使います。空欄の項目は、自動で取れる値を使うか、採点から外して「データなし」と表示します">
+        <div className="grid grid-cols-3 lg:grid-cols-6 gap-3.5">
+          <label className={fieldLabel}>
+            築年数（年）
+            <input name="age_years" inputMode="numeric" defaultValue={str(v.age_years)} placeholder="新築は0" className={input} />
+          </label>
+          <label className={fieldLabel}>
+            居室数
+            <input name="rooms" inputMode="numeric" defaultValue={str(v.rooms)} placeholder="空欄なら間取りから" className={input} />
+          </label>
+          <label className={fieldLabel}>
+            平屋
+            <select name="is_hiraya" defaultValue={boolValue(v.is_hiraya)} className={`${input} bg-white`}>
+              <option value="">未入力</option>
+              <option value="1">はい</option>
+              <option value="0">いいえ</option>
+            </select>
+          </label>
+          <label className={fieldLabel}>
+            庭
+            <select name="has_garden" defaultValue={boolValue(v.has_garden)} className={`${input} bg-white`}>
+              <option value="">未入力</option>
+              <option value="1">あり</option>
+              <option value="0">なし</option>
+            </select>
+          </label>
+          <label className={fieldLabel}>
+            区
+            <select name="ward" defaultValue={v.ward ?? ""} className={`${input} bg-white`}>
+              <option value="">住所から読む</option>
+              {WARDS.map((w) => <option key={w}>{w}</option>)}
+            </select>
+          </label>
+          <label className={fieldLabel}>
+            町
+            <input name="town" defaultValue={str(v.town)} placeholder="空欄なら住所から" className={input} />
+          </label>
+        </div>
+        <details>
+          <summary className="text-xs text-brand font-bold cursor-pointer select-none">周辺の距離・地域の値を手入力する（自動で取れない値・自動の値を直したいとき）</summary>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mt-3">
+            {MANUAL_METRIC_KEYS.map((k) => (
+              <label key={k} className={fieldLabel}>
+                {ITEM_LABEL[k] ?? k}
+                <input name={`m_${k}`} inputMode="decimal" defaultValue={str(v.manual_metrics?.[k] ?? null)} placeholder={MANUAL_HINT[k]} className={input} />
+              </label>
+            ))}
+          </div>
+        </details>
+      </Section>
+
+      <Section title="販売の条件" note="総予算を空欄にすると、採点ルール表の提案値（物件価格×基準率×売れやすさの倍率）を使います（販売戦略の画面で「入力値／提案値」を区別して表示）">
         <div className="grid grid-cols-3 gap-3.5">
           <label className={fieldLabel}>
             広告の総予算（万円）

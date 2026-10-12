@@ -16,6 +16,8 @@ export interface CompetitorValues {
   buildingSqm: number | null;
   layout: string | null;
   walkMin: number | null;
+  /** 築年数（新築=0）。採点ルール表（D35）の競合比較に使う */
+  ageYears: number | null;
   parking: number | null;
   features: string | null;
   sourceType: "portal" | "seen" | "other" | null;
@@ -105,7 +107,11 @@ export default function CompetitorForm({ propertyId, competitors }: { propertyId
                 <input name={f("layout")} defaultValue={str(c?.layout)} placeholder="例：4LDK" className={input} />
               </label>
             </div>
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-3 gap-2.5">
+              <label className={fieldLabel}>
+                築年数（新築は0）
+                <input name={f("age")} inputMode="numeric" defaultValue={str(c?.ageYears)} className={input} />
+              </label>
               <label className={fieldLabel}>
                 駅徒歩（分）
                 <input name={f("walk")} inputMode="numeric" defaultValue={str(c?.walkMin)} className={input} />

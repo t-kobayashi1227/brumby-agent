@@ -1,11 +1,11 @@
 import { getSql } from "../../../../lib/db";
-import { loadReport, findFact, areaStats, nearbyFacilities, loadDealCases } from "../../../../lib/report";
+import { defaultPropertyId, listProperties, loadReport, findFact, areaStats, nearbyFacilities, loadDealCases } from "../../../../lib/report";
 import { CENSUS_SOURCE, MLIT_SOURCE } from "../../../_lib/data";
 import { emptyState } from "../../../_lib/ui";
 import ResearchResultClient from "./ResearchResultClient";
 
 // AI分析結果（競合診断）。設計書 5.3 の集計の部品①〜⑥のカードを、そのまま見せる
-// ?property=<id> で物件を切り替える（省略時は1）
+// ?property=<id> で物件を切り替える（省略時は最後に分析した物件）
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
 
@@ -13,9 +13,8 @@ const formatDate = (d: Date) => d.toLocaleDateString("ja-JP", { timeZone: "Asia/
 
 export default async function ResearchResultPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const propertyId = Number(sp.property) > 0 ? Number(sp.property) : 1;
-
   const sql = getSql();
+  const propertyId = Number(sp.property) > 0 ? Number(sp.property) : defaultPropertyId(await listProperties(sql));
   const report = await loadReport(sql, propertyId);
   if (!report) return <div className={emptyState}>物件 {propertyId} が見つかりません。</div>;
 
@@ -37,6 +36,7 @@ export default async function ResearchResultPage({ searchParams }: { searchParam
   return (
     <ResearchResultClient
       hasRun={hasRun}
+      propertyId={propertyId}
       surveyDate={hasRun ? formatDate(report.run.createdAt) : ""}
       propertyName={report.property.name}
       propertyPriceManYen={report.property.priceManYen}

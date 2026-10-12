@@ -5,6 +5,10 @@ import { redirect } from "next/navigation";
 import { getSql } from "../../../lib/db";
 import { GEOCODER, geocodeAddress } from "../../../lib/geocode";
 import { PROPERTY_TYPES } from "../../../lib/rules/describe";
+import { MANUAL_METRIC_KEYS } from "../../../lib/scoring/constants";
+import { MAX_PHOTO_BYTES, PHOTO_TYPES, photosReady } from "../../../lib/photos";
+import type { Sql } from "../../../lib/db";
+import { SCORING_PROPERTY_COLUMNS, scoringSchemaReady } from "../../../lib/scoring/schema-check";
 import { fetchLayer, type FetchResult } from "../../../lib/surroundings/fetch";
 import { LAYERS } from "../../../lib/surroundings/layers";
 
@@ -35,6 +39,14 @@ function num(formData: FormData, name: string, label: string, opts: { int?: bool
   return n;
 }
 
+/** はい／いいえ／未入力の選択 */
+function bool(formData: FormData, name: string): boolean | null {
+  const v = text(formData, name);
+  return v === null ? null : v === "1";
+}
+
+const WARDS = ["北区", "東区", "中央区", "江南区", "秋葉区", "南区", "西区", "西蒲区"];
+
 function readForm(formData: FormData) {
   const name = text(formData, "name");
   if (!name) throw new Error("物件名を入れてください");
@@ -44,6 +56,14 @@ function readForm(formData: FormData) {
   if (!propertyType || !(PROPERTY_TYPES as readonly string[]).includes(propertyType)) throw new Error("物件種別を選んでください");
   const areaClass = text(formData, "area_class");
   if (areaClass !== null && !(AREA_CLASSES as readonly string[]).includes(areaClass)) throw new Error("エリアの区分を選び直してください");
+  const ward = text(formData, "ward");
+  if (ward !== null && !WARDS.includes(ward)) throw new Error("区を選び直してください");
+  // 手入力の値（採点ルール表。空欄の項目は入れない）
+  const manual: Record<string, number> = {};
+  for (const k of MANUAL_METRIC_KEYS) {
+    const n = num(formData, `m_${k}`, k, { min: 0 });
+    if (n !== null) manual[k] = n;
+  }
   const deadline = text(formData, "sales_deadline");
   if (deadline !== null && !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) throw new Error("販売期限は日付で入れてください");
 
@@ -62,6 +82,13 @@ function readForm(formData: FormData) {
     total_budget_man_yen: num(formData, "total_budget_man_yen", "広告の総予算", { int: true, min: 1 }),
     sales_deadline: deadline,
     sales_goal: text(formData, "sales_goal"),
+    age_years: num(formData, "age_years", "築年数", { int: true, min: 0 }),
+    rooms: num(formData, "rooms", "居室数", { int: true, min: 0 }),
+    is_hiraya: bool(formData, "is_hiraya"),
+    has_garden: bool(formData, "has_garden"),
+    ward,
+    town: text(formData, "town"),
+    manual_metrics: manual,
   };
 }
 
@@ -85,29 +112,65 @@ async function geocodeAndStore(propertyId: number, address: string): Promise<str
   }
 }
 
+/**
+ * 物件の写真を保存する（フォームの photo）。photo_remove なら消して仮画像に戻す
+ * 写真の表（property_photos）がまだない（マイグレーション前）ときは、写真だけ保存せずに知らせる
+ */
+async function savePhoto(sql: Sql, propertyId: number, formData: FormData): Promise<string | null> {
+  const file = formData.get("photo");
+  const remove = formData.get("photo_remove") === "1";
+  if (!(file instanceof File && file.size > 0) && !remove) return null;
+  if (!(await photosReady(sql))) return "写真の表がまだDBにないため、写真は保存していません（マイグレーションの反映が必要です）。";
+  if (remove && !(file instanceof File && file.size > 0)) {
+    await sql`delete from property_photos where property_id = ${propertyId}`;
+    return null;
+  }
+  const photo = file as File;
+  if (!(PHOTO_TYPES as readonly string[]).includes(photo.type)) throw new Error("写真は JPEG・PNG・WebP にしてください");
+  if (photo.size > MAX_PHOTO_BYTES) throw new Error("写真が大きすぎます（2.5MBまで）");
+  const size = (name: string) => {
+    const n = Number(formData.get(name));
+    return Number.isInteger(n) && n > 0 ? n : null;
+  };
+  const content = Buffer.from(await photo.arrayBuffer());
+  await sql`
+    insert into property_photos (property_id, content, content_type, width, height, size_bytes)
+    values (${propertyId}, ${content}, ${photo.type}, ${size("photo_width")}, ${size("photo_height")}, ${photo.size})
+    on conflict (property_id) do update set content = excluded.content, content_type = excluded.content_type, width = excluded.width,
+      height = excluded.height, size_bytes = excluded.size_bytes, updated_at = now()
+  `;
+  return null;
+}
+
 /** 新規登録（id なし）と変更（id あり）。新規は保存後に物件の画面へ移る */
 export async function saveProperty(_prev: PropertyFormState, formData: FormData): Promise<PropertyFormState> {
   let createdId: number | null = null;
   let geocodeWarning: string | null = null;
   try {
     const sql = getSql();
-    const v = readForm(formData);
+    const form = readForm(formData);
+    // 採点ルール表（D35）の列は、マイグレーションが入る前は保存しない
+    const v: Record<string, unknown> = { ...form, manual_metrics: sql.json(form.manual_metrics) };
+    if (!(await scoringSchemaReady(sql))) for (const c of SCORING_PROPERTY_COLUMNS) delete v[c];
     const id = Number(text(formData, "id") ?? 0);
 
     if (id > 0) {
       const [before] = await sql<{ address: string; geocode_source: string | null }[]>`select address, geocode_source from properties where id = ${id}`;
       if (!before) throw new Error(`物件 ${id} がありません`);
       await sql`update properties set ${sql(v)} where id = ${id}`;
+      const photoWarning = await savePhoto(sql, id, formData);
       // 住所を変えたら位置を取り直す。地図で置いたピン（manual）も、住所が変わったら取り直す
-      const warning = before.address !== v.address ? await geocodeAndStore(id, v.address) : null;
+      const warning = before.address !== form.address ? await geocodeAndStore(id, form.address) : null;
       revalidatePath(`/properties/${id}`);
-      if (warning) return { error: `保存しました。${warning}` };
-      return { ok: before.address !== v.address ? "保存しました。住所が変わったので、位置を取り直しました。地図のピンを確かめてください。" : "保存しました。" };
+      if (warning || photoWarning) return { error: `保存しました。${[warning, photoWarning].filter(Boolean).join("")}` };
+      return { ok: before.address !== form.address ? "保存しました。住所が変わったので、位置を取り直しました。地図のピンを確かめてください。" : "保存しました。" };
     }
 
     const [row] = await sql<{ id: number }[]>`insert into properties ${sql(v)} returning id`;
     createdId = Number(row.id);
-    geocodeWarning = await geocodeAndStore(createdId, v.address);
+    // 写真が保存できなくても（マイグレーション前など）、物件の登録は済ませて物件の画面へ進む
+    await savePhoto(sql, createdId, formData).catch(() => null);
+    geocodeWarning = await geocodeAndStore(createdId, form.address);
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }

@@ -14,7 +14,7 @@ Supabase のダッシュボード（Table Editor）を開いたときに、「�
 
 ## 1. はじめに：全体の見取り図
 
-テーブルは、役割で5つのグループに分かれる。
+テーブルは、役割で6つのグループに分かれる。
 
 ```
 ① 版の管理           dataset_versions ─ ingest_logs
@@ -28,8 +28,14 @@ Supabase のダッシュボード（Table Editor）を開いたときに、「�
                           │
 ④ 分析の結果          analysis_runs（分析1回分）─ facts（事実カード・判断カード）
                                               └ narratives（AIの文章）─ evaluations（評価）
-⑤ ルール表           rules ・ target_candidates（狙う層の候補）・ appeal_items（訴求の素材）
-                          └ rule_revisions（3つの表の変更の履歴）
+                     brumby_judgments（BRUMBY様の判断。いまは使っていない）
+⑤ ルール表（旧）       rules ・ target_candidates（狙う層の候補）・ appeal_items（訴求の素材）
+   2026-10-12まで         └ rule_revisions（3つの表の変更の履歴）
+⑥ 採点ルール表        personas（ペルソナ）・ scoring_items（項目の重視度）・ scoring_rules（採点ルール）
+   （設計書D35）        scoring_params（重み・前提・予算）・ competitor_items（競合重視度）
+                     market_reference（相場）・ area_popularity（エリア人気）
+                     media_channels（媒体）・ media_usage_rates（利用率）・ media_results（反響の記録）
+                          └ scoring_revisions（変更の履歴）
 ```
 
 ### テーブルの一覧
@@ -52,7 +58,19 @@ Supabase のダッシュボード（Table Editor）を開いたときに、「�
 | ④ 分析の結果 | `facts` | 事実カード・判断カード | 430（仮の物件で試し） | 同上 |
 | ④ 分析の結果 | `narratives` | AIが書いた説明文 | 0 | （これから）分析の処理 |
 | ④ 分析の結果 | `evaluations` | 評価（5段階×4観点） | 0 | （これから）評価の入力画面 |
-| ⑤ ルール表 | `rules` | 予算配分・狙う層を決めるルール | 20（仮のルール） | `npm run seed-rules` で最初に入れ、以後はルール表の画面（`/rules`）か Studio で人が直す |
+| ④ 分析の結果 | `brumby_judgments` | BRUMBY様の判断（ターゲット・訴求・媒体）。2026-10-12に画面から外し、いまは使っていない | 0 | （なし） |
+| ⑥ 採点ルール表 | `personas` | ペルソナ（A〜H）と年収・貯蓄の分布、年代構成、買い手の割合 | 6 | `npm run import-scoring` で Excel から入れ、以後は `/rules` で人が直す |
+| ⑥ 採点ルール表 | `scoring_items` | 項目と、ペルソナごとの重視度（0〜3） | 19 | 同上 |
+| ⑥ 採点ルール表 | `scoring_rules` | 採点ルール（1行＝1ルール） | 59 | 同上 |
+| ⑥ 採点ルール表 | `scoring_params` | 層の重み・購入前提・予算の決め方・媒体配分の数値 | 32 | 同上 |
+| ⑥ 採点ルール表 | `competitor_items` | 競合と比べる項目と重視度 | 8 | 同上 |
+| ⑥ 採点ルール表 | `market_reference` | 区×築年数区分の取引の中央値 | 24 | 同上 |
+| ⑥ 採点ルール表 | `area_popularity` | 町ごとの人気スコア | 198 | 同上 |
+| ⑥ 採点ルール表 | `media_channels` | 媒体の一覧 | 11 | 同上 |
+| ⑥ 採点ルール表 | `media_usage_rates` | 年代別の媒体の利用率 | 8 | 同上 |
+| ⑥ 採点ルール表 | `media_results` | 反響の記録（費用・問い合わせ・見学・成約） | 0 | `/rules` の「媒体・反響」 |
+| ⑥ 採点ルール表 | `scoring_revisions` | ⑥の表の変更の履歴（理由・関連物件つき） | — | 自動（トリガー）。Excel の変更履歴も取り込む |
+| ⑤ ルール表（旧） | `rules` | 予算配分・狙う層を決めるルール | 20（仮のルール） | `npm run seed-rules` で最初に入れ、以後はルール表の画面（`/rules`）か Studio で人が直す |
 | ⑤ ルール表 | `target_candidates` | 狙う層の候補 | 0 | ルール表の画面（`/rules`）か Studio で人が直す |
 | ⑤ ルール表 | `appeal_items` | 訴求の素材 | 0 | 同上 |
 | ⑤ ルール表 | `rule_revisions` | ルール・候補・訴求の変更の履歴 | 24 | 自動（`rules`・`target_candidates`・`appeal_items` を変えると記録される） |
@@ -366,7 +384,26 @@ where p.id = 1;
 | `total_budget_man_yen` | integer | | 広告の総予算（万円）。利用者が入力する。空なら `total_budget` ルールの提案値を使う（設計書D15） | `30` |
 | `sales_deadline` | date | | 販売期限 | `2027-03-31` |
 | `sales_goal` | text | | 販促目的 | `見学予約を増やしたい` |
+| `age_years` | smallint | | 築年数（新築=0）。空で種別が新築なら0とみなす（採点ルール表。設計書D35） | `0` |
+| `rooms` | smallint | | 居室数。空なら `layout`（4LDK → 4）から読む | `4` |
+| `is_hiraya` | boolean | | 平屋か。空なら「データなし」 | `false` |
+| `has_garden` | boolean | | 庭があるか | `true` |
+| `ward` | text | | 区（相場・エリア人気に使う）。空なら住所から読む | `中央区` |
+| `town` | text | | 町（エリア人気に使う）。空なら住所から読む | `上近江` |
+| `manual_metrics` | jsonb | 必須 | 手入力の値。自動で取れない距離・地域の値や、自動の値の上書き。キーは採点ルール表の項目キー | `{"バス停_m":250,"スーパー_m":480}` |
 | `created_at` / `updated_at` | timestamptz | 必須 | 作った日時・最後に変えた日時 | |
+
+### `property_photos`：物件の写真（2026-10-12）
+**1行＝物件1件の写真1枚。** 物件の登録・変更の画面で登録する。なければ画面は共通の仮画像（`public/house.jpg`）を出す。Supabase Storage ではなく DB に置く（画面に Storage の強いキーを置かずに済むため）。写真はブラウザで長辺1600px・JPEG に縮めてから送る（2.5MBまで）。画面からは `/properties/<id>/photo?v=<更新日時>` で読む。物件を削除すると消える。
+
+| 列 | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `property_id` | bigint | 必須 | どの物件の写真か（`properties.id`） |
+| `content` | bytea | 必須 | 画像のデータ |
+| `content_type` | text | 必須 | `image/jpeg`／`image/png`／`image/webp` |
+| `width` / `height` | integer | | 縮めた後の大きさ（px） |
+| `size_bytes` | integer | 必須 | データの大きさ |
+| `updated_at` | timestamptz | 必須 | 登録・差し替えの日時（URL の版に使う） |
 
 ### `competitors`：競合物件
 **1行＝ある物件の競合物件1件**（手入力、物件ごとに3件まで）。物件を削除すると、競合物件も消える。
@@ -380,7 +417,8 @@ where p.id = 1;
 | `location` | text | | 所在地 | `新潟市中央区○○町` |
 | `land_sqm` / `building_sqm` | numeric | | 土地・建物の面積（㎡） | `135` / `102` |
 | `layout` | text | | 間取り | `4LDK` |
-| `walk_min` | smallint | | 駅からの徒歩（分） | `12` |
+| `walk_min` | smallint | | 駅からの徒歩（分）。採点では「×80÷1.3」で直線距離（m）にそろえて比べる | `12` |
+| `age_years` | smallint | | 築年数（新築=0）。採点ルール表の競合比較に使う | `0` |
 | `parking` | smallint | | 駐車場の台数 | `2` |
 | `features` | text | | 特徴 | `南向き・太陽光発電付き` |
 | `source_type` | text | | どこで見たか。`seen`（見かけた）／`portal`（ポータル）／`other`（設計書D30） | `portal` |
@@ -403,7 +441,8 @@ where p.id = 1;
 | `property_id` | bigint | 必須 | どの物件の分析か | |
 | `params` | jsonb | 必須 | 分析の条件。`min_top_score`・`tie_margin` は狙う層の絞り込みの基準 | `{"radius_m":1000,"price_min_n":10,"price_years":3,"min_top_score":2,"tie_margin":0}` |
 | `dataset_version_ids` | bigint[] | 必須 | 使った公開データの版 | `{4,7,13,22}` |
-| `rules_version` | bigint | | 使ったルールの版（その時点の `rule_revisions.id` の最大） | |
+| `rules_version` | bigint | | 使ったルールの版（その時点の `rule_revisions.id` の最大）。旧ルール表 | |
+| `scoring_version` | bigint | | 使った採点ルール表の版（その時点の `scoring_revisions.id` の最大。設計書D35） | |
 | `status` | text | 必須 | `running`（実行中）／`succeeded`（成功）／`failed`（失敗） | |
 | `stage` | text | | 次に進める段階。`analyze`（集計）→ `rules`（ルール）→ `ai`（AI）→ `verify`（検証）。段階ごとに別の呼び出しで進める（設計書D34） | |
 | `stage_started_at` | timestamptz | | いまの段階を進めている印（空なら誰も進めていない）。10分たっても空にならなければ、止まったものとして取り直せる | |
@@ -443,6 +482,7 @@ where p.id = 1;
 | `facility.junior_high_district` | ④ 周辺施設 | — | `第三中学校` | 同上 |
 | `facility.nursery_nearest` | ④ 周辺施設 | 最寄りの保育園・幼稚園等までの直線距離（m） | `宝塔院幼稚園（直線322m、徒歩約6分）` | 名称、種類、直線・徒歩の距離と分数 |
 | `facility.nursery_count` | ④ 周辺施設 | 半径（初期値1km）の中の保育園・幼稚園等の数 | `半径1000m以内に15か所` | 種類ごとの内訳 |
+| `facility.nursery_count_800m` | ④ 周辺施設 | 半径800mの中の保育園・幼稚園等の数（採点ルール表の「保育園_800m内」） | `半径800m以内に9か所` | 種類ごとの内訳 |
 | `facility.station_nearest` | ④ 周辺施設 | 最寄りの駅までの直線距離（m） | `白山駅（越後線）直線1539m、徒歩約26分` | 駅名、路線、乗降客数（人/日）とその年 |
 | `area.zoning` | ④ 周辺施設 | — | `第１種住居地域`／`用途地域の指定がない区域` | 建蔽率・容積率（ある場合） |
 | `target.population` | ① 人口構成 | 半径の中の人口（人） | `半径1000mの人口 約21,226人、世帯 約9,426` | 世帯数、重なった町丁目の数、計算方法 |
@@ -466,10 +506,12 @@ where p.id = 1;
 | `competitor.unit_price_gap` | ⑥ 競合物件 | 面積あたりの価格の差の割合（戸建は建物、土地は土地の面積） | `建物1㎡あたりの価格 356,671円は、競合3件の平均 368,019円より3.1%低い` | 物件と競合1件ずつの1㎡あたりの価格 |
 | `competitor.land_area_gap` | ⑥ 競合物件 | 土地の面積の差の割合 | `土地 180.25㎡は、競合3件の平均 157.7㎡より14.3%広い` | 物件と競合1件ずつの土地の面積 |
 | `competitor.features` | ⑥ 競合物件 | 競合物件の数 | `競合3件の特徴：1件目 4LDK・駅徒歩12分・駐車場2台・南向き・太陽光発電付き ／ …` | 物件と競合の間取り・徒歩・駐車場・特徴 |
-| `decision.target_rank` | ルール（判断カード） | 1位の点数。1位の点が `min_top_score` 未満なら `insufficient`（絞り込めない） | `1位 30〜40代の子育てファミリー（3/4点） ／ 2位 …` | `ranking`（順位・候補・点・満点 `max`・効いたルール・`confidence`・`available`）、`tied`、`unresolved` |
+| `decision.persona_scores` | 採点ルール表（判断カード、2026-10-12から） | 1位の総合点 | `1位 小中学生のいる家族 総合83.1点（物件96点・購入可能性67点・…）／ …` | `personas`（全ペルソナの総合点・5層の点数・該当ルール・素点/満点・データなしの項目・購入可能性の計算・ターゲット像）、`inputs`（採点に使った値と出どころ）、`competitors`（項目ごとの勝ち負け）、`missing_inputs` |
+| `decision.salability` | 採点ルール表（判断カード） | 売れやすさ（0〜100） | `売れやすさ 58点（標準）` | エリア人気・価格の相場比・第1ターゲットの適合度の点、区分 |
+| `decision.target_rank` | ルール（判断カード） | 1位の点数。採点ルール表（2026-10-12から）では第1ターゲットの総合点（100点満点）で、`basis.method` が `scoring`、`ranking` に層ごとの点数とターゲット像が入る。1位の点が `min_top_score` 未満なら `insufficient`（絞り込めない） | `1位 30〜40代の子育てファミリー（3/4点） ／ 2位 …` | `ranking`（順位・候補・点・満点 `max`・効いたルール・`confidence`・`available`）、`tied`、`unresolved` |
 | `decision.appeals` | ルール（判断カード） | 選んだ訴求の数（3つまで） | `1. 駅が近い ／ 2. 相場より割安 ／ 3. …` | `items`（素材ごとの点・選んだか・効いたルール）、`skipped`（必要なカードがなく外した素材） |
 | `decision.total_budget` | ルール（判断カード） | 広告の総予算（万円） | `広告の総予算 30万円（入力値）` | `source`（`input`＝入力／`rule`＝ルールの提案値）、効いたルール、提案値、物件の価格 |
-| `decision.media.sns` ほか | ルール（判断カード） | 媒体ごとの金額（万円）。`comparison` は総予算。媒体は `sns`・`posting`・`flyer`・`lp` | `Instagram・Facebook広告 15.6万円（52%）` | 媒体名・役割、割合、重み、固定額・最低額、効いたルール |
+| `decision.media.sns` ほか | ルール（判断カード） | 媒体ごとの金額（万円）。`comparison` は総予算。旧ルール表の媒体は `sns`・`posting`・`flyer`・`lp`、採点ルール表では `media_channels.id`（`instagram`・`portal` など）。採点ルール表では `basis` に届きやすさ・反響係数・最初に使う額も入る | `Instagram・Facebook広告 15.6万円（52%）` | 媒体名・役割、割合、重み、固定額・最低額、効いたルール |
 
 周りのデータをまだ取っていない物件では、⑤ 防災・④ 周辺施設のカードは `status = not_available` になり、`basis.reason` に理由が入る。
 
@@ -499,6 +541,8 @@ order by f.seq;
 | `created_at` | timestamptz | 必須 | 作った日時 | |
 
 ### `evaluations`：評価（5段階×4観点）
+2026-10-12 に、PoCで見せるときに邪魔になるため販売戦略の画面から評価の入力（「この戦略の評価（確認2）」）を外した。表は残している。
+
 **1行＝1つの観点の点数1つ**（PoCの確認2の材料。設計書D18・10章）。具体性・実行可能性は4つの答えごと、根拠整合・UI可読性は物件ごと（`answer_key` は空）に付ける。同じ人が同じ文章・答え・観点に付けられるのは1行だけ。
 
 | 列 | 型 | 必須 | 説明 | 例 |
@@ -514,7 +558,9 @@ order by f.seq;
 
 ---
 
-## 7. ⑤ ルール表
+## 7. ⑤ ルール表（旧。2026-10-12から分析には使っていない）
+
+採点ルール表（7.5、設計書D35）に置き換えた。前の分析の結果を読むために、表と画面（`/rules/legacy`）を残している。
 
 ### `rules`：ルール
 **1行＝ルール1つ。** 狙う層の順位、訴求の選び方、予算配分を決める。BRUMBY様からの聞き取りで育てる。**ルール表の画面（`/rules`）か Supabase Studio で直接直してよい**（設計書D4の例外、D14）。編集すると `version` が自動で上がり、変更が `rule_revisions` に残る。
@@ -570,6 +616,60 @@ order by f.seq;
 | `operation` | text | 必須 | `insert`（追加）／`update`（変更）／`delete`（削除） | |
 | `snapshot` | jsonb | 必須 | 変更後の行の中身（削除のときは削除前） | |
 | `changed_at` | timestamptz | 必須 | 変えた日時 | |
+
+---
+
+## 7.5 ⑥ 採点ルール表（設計書D35）
+
+BRUMBY様と作った Excel「採点ルール表」を表にしたもの。最初に `npm run import-scoring -- "<xlsxのパス>"` で取り込み、以後は採点ルール表の画面（`/rules`）で直す（Supabase Studio で直してもよいが、変更理由が残らない）。どの表を変えても `scoring_revisions` に変更前後が残り、分析の実行には `scoring_revisions.id` の最大を「採点ルール表の版」として残す。計算は `lib/scoring/engine.ts`。
+
+### `personas`：ペルソナ（Excel：ペルソナ・年収分布・貯蓄分布・ペルソナの年代・買い手の多さ）
+
+| 列 | 型 | 必須 | 説明 | 例 |
+|---|---|---|---|---|
+| `id` | text | 必須 | A〜H（G・Hは予備枠） | `B` |
+| `label` / `description` | text | 必須 | ターゲット候補の名前／世帯像・重視すること | `小中学生のいる家族` |
+| `rep_age` | integer | 必須 | 代表年齢。完済年齢の上限から返済期間を決める | `40` |
+| `down_payment_rate` | numeric | 必須 | 想定頭金率 | `0.15` |
+| `purchase_method` | text | 必須 | `loan`（年収からローンを逆算）／`cash`（今の家の売却見込み＋貯蓄） | `loan` |
+| `income_dist` | jsonb | 必須 | 世帯年収の分布（10区分の割合。区分は `lib/scoring/constants.ts` の `INCOME_BANDS`） | `[0.016,0.033,…]` |
+| `savings_dist` | jsonb | 必須 | 貯蓄の分布（19区分。`cash` のペルソナだけ使う） | `[0.077,…]` |
+| `age_mix` | jsonb | 必須 | 広告を見て判断する世帯主の年代構成（媒体の届きやすさに使う） | `{"30代":0.5,"40代":0.5}` |
+| `buyer_share_new` / `buyer_share_used` | numeric | | 新築／中古の買い手での割合（買い手の多さ） | `0.661` / `0.387` |
+| `notes` | jsonb | 必須 | 統計の区分・世帯数・根拠のメモ | |
+| `sort_order` / `enabled` | | 必須 | 並び順（同点のときは上が先）・使うか | |
+
+### `scoring_items`：項目の重視度
+**1行＝採点の項目1つ。** `key` は Excel と同じ項目キー（例：`駅_m`・`延床_㎡`）。`importance` はペルソナごとの重視度 `{"A":2,"B":3,…}`（0=関係ない〜3=とても重視）。`layer` は 物件／生活環境／市場。
+
+### `scoring_rules`：採点ルール
+**1行＝1ルール。** 項目の値が `lower_bound`〜`upper_bound`（空は制限なし）なら該当。点＝適合度（`fit` の ◎+2〜×−2）×重視度×1段階の点数（`scoring_params` の `1段階の点数`）。`reason` は画面の「評価理由」に出す文。`basis_class` は 統計／仮説／BRUMBY確認／BRUMBY実務。`exclusive_group`（空なら `id`）ごとに一番大きい加点を足したものが満点。
+
+### `scoring_params`：数値の設定
+**1行＝数値1つ。** `category` が `layer_weight`（物件・購入可能性・生活環境・市場・競合・買い手の多さ）／`purchase`（金利・返済負担率・完済年齢上限・最長返済期間・満点割合・1段階の点数・年収の端数・自宅売却見込み・貯蓄の使える割合）／`budget`（売れやすさの重みと区切り、基準率、倍率、初回の割合、追加の条件、価格見直しの相場比）／`media`（配分に使う媒体の数、反響係数を使い始める問い合わせ数）。キーが抜けていると `lib/scoring/constants.ts` の既定値で計算する。
+
+### `competitor_items`：競合重視度
+**1行＝競合と比べる項目1つ。** `direction`（1=大きいほど有利、−1=小さいほど有利）、`importance`（ペルソナごとの重視度）、`tie_margin`（この差以内は引き分け）。
+
+### `market_reference`：相場・周辺の取引
+**1行＝区×築年数区分（新築／築2〜20年／築21年以上）の取引の中央値。** 価格・延床・土地・築年数・件数。価格の相場比と、競合がないときの比較相手に使う。出典は不動産情報ライブラリ（新潟市 2021〜2026年、戸建3,297件）。
+
+### `area_popularity`：エリア人気
+**1行＝町1つの人気スコア（0〜100）と市内順位。** 町が見つからないときは区の中央値、それもなければ50点。
+
+### `media_channels`・`media_usage_rates`：媒体と利用率
+媒体ごとに、使う統計（`stat_name`、`media_usage_rates` の行）か一律の届きやすさ（`flat_reach`）を持つ。利用率は年代別（%）と全年代。届きやすさ＝(ペルソナの年代構成で平均した利用率)²÷全年代の利用率×反響係数。
+
+### `media_results`：反響の記録
+**1行＝ある媒体の掲載1回分**（物件・掲載開始日・費用・問い合わせ・見学・成約）。反響係数＝全媒体の平均の問い合わせ単価÷その媒体の問い合わせ単価（0.5〜2.0）。問い合わせが `係数を使い始める問い合わせ数`（10件）未満の媒体は1.00。
+
+### `brumby_judgments`：BRUMBY様の判断（いまは使っていない）
+2026-10-12 に、PoCで見せるときに邪魔になるため販売戦略の画面から入力欄と一致率の表示を外した。表は残している。
+
+**1行＝ある物件についての判断1回。** `targets`（ペルソナID、第1〜第3）、`appeals`（`competitor_items.key`）、`media`（`media_channels.id`）、`comment`（AIとのズレの理由）、`run_id`（判断したときに見ていた分析）。販売戦略の画面で、AIの結果との一致率とズレを出す（`lib/scoring/agreement.ts`）。
+
+### `scoring_revisions`：採点ルール表の変更の履歴
+**1行＝⑥の表の追加・変更・削除1回**（トリガーで自動）。`before`・`after` に変更前後の行、`reason`・`related_property`・`changed_by` に画面で入れた変更理由・関連物件・変更者（`set_config('brumby.change_reason', …)` で同じトランザクションから渡す）。`table_name = 'excel'` の行は、Excel の「変更履歴」シートを取り込んだもの。
 
 ---
 

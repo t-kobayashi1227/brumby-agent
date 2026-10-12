@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSql } from "../../../lib/db";
+import { scoringSchemaReady } from "../../../lib/scoring/schema-check";
 
 // 競合物件の手入力（設計書 7章、D30）。物件ごとに3件まで
 // どこで・いつ・誰が確かめたかも残す（source_type・source_site・confirmed_on・entered_by）
@@ -47,6 +48,7 @@ export async function saveCompetitors(_prev: CompetitorFormState, formData: Form
         building_sqm: num(formData, f("building"), `${label}の建物面積`),
         layout: text(formData, f("layout")),
         walk_min: num(formData, f("walk"), `${label}の駅徒歩`, true),
+        age_years: num(formData, f("age"), `${label}の築年数`, true),
         parking: num(formData, f("parking"), `${label}の駐車場`, true),
         features: text(formData, f("features")),
       };
@@ -67,6 +69,8 @@ export async function saveCompetitors(_prev: CompetitorFormState, formData: Form
     }
 
     const sql = getSql();
+    // 採点ルール表（D35）の築年数の列は、マイグレーションが入る前は保存しない
+    if (!(await scoringSchemaReady(sql))) for (const r of rows) if (r.values) delete r.values.age_years;
     await sql.begin(async (tx) => {
       for (const r of rows) {
         if (r.values === null) {

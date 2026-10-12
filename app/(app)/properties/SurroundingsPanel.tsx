@@ -40,7 +40,7 @@ const rangeOf = (apiId: string) => {
   return l.mode === "radius" ? "半径3km" : l.keepM ? `${l.keepM}m以内` : "物件を含む区域";
 };
 
-export default function SurroundingsPanel({ propertyId, hasLocation, autoStart, initial }: { propertyId: number; hasLocation: boolean; autoStart: boolean; initial: FetchRow[] }) {
+export default function SurroundingsPanel({ propertyId, hasLocation, autoStart, initial, analyzed }: { propertyId: number; hasLocation: boolean; autoStart: boolean; initial: FetchRow[]; analyzed: boolean }) {
   const [rows, setRows] = useState<FetchRow[]>(() =>
     LAYERS.map((l) => initial.find((r) => r.apiId === l.apiId) ?? { apiId: l.apiId, status: "waiting", featuresKept: null, error: null, fetchedAt: null }),
   );
@@ -110,9 +110,15 @@ export default function SurroundingsPanel({ propertyId, hasLocation, autoStart, 
         <button type="button" onClick={run} disabled={running || !hasLocation} className={`${btnSecondary} disabled:opacity-60`}>
           {running ? "取得中…" : "取り直す"}
         </button>
-        <Link href={`/strategy?property=${propertyId}`} className={btnPrimary}>
-          分析へ →
-        </Link>
+        {hasLocation ? (
+          <Link href={`/strategy?property=${propertyId}&autorun=1`} className={btnPrimary}>
+            {analyzed ? "もう一度分析する →" : "分析へ →"}
+          </Link>
+        ) : (
+          <span aria-disabled="true" className={`${btnPrimary} opacity-50 cursor-not-allowed`}>
+            分析へ →
+          </span>
+        )}
       </div>
       <table className="w-full text-[12px] border-collapse">
         <thead>

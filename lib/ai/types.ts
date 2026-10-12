@@ -31,6 +31,10 @@ export interface PropertySummary {
   parking: number | null;
   access: string | null;
   features: string | null;
+  /** 採点ルール表（D35）の物件の入力。築年数（新築=0）・平屋・庭 */
+  ageYears?: number | null;
+  isHiraya?: boolean | null;
+  hasGarden?: boolean | null;
   competitorCount: number;
 }
 

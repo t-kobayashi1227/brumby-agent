@@ -1,5 +1,4 @@
 import type { Sql } from "./db";
-import { MEDIA } from "./rules/catalog";
 import type { Rule, TargetRankItem } from "./rules/engine";
 import type { NarrativeContent } from "./ai/schema";
 import type { FactStatus } from "./types";
@@ -89,13 +88,21 @@ export interface MediaItem {
   role: string;
   amount: number;
   share: number;
+  /** 最初に使う額（採点ルール表の実行だけ） */
+  initialManYen: number | null;
+  /** 媒体の評価（採点ルール表の実行だけ）：届きやすさ・順位・配分に使ったか・届きやすさの根拠・反響係数 */
+  evaluation: {
+    reach: number;
+    rank: number;
+    selected: boolean;
+    basis: { kind: "usage"; statName: string; targetUsage: number; allAges: number } | { kind: "flat"; flatReach: number } | null;
+    coefficient: number;
+    targetLabel: string | null;
+  } | null;
   fixedManYen: number | null;
   minManYen: number | null;
   rules: { id: string; version: number; note: string }[];
 }
-
-/** 媒体の色（寄せ：プロトタイプのドーナツ図と同じ配色） */
-export const MEDIA_COLOR: Record<string, string> = { sns: "#3b6fd6", posting: "#f2a93b", flyer: "#9b7bd1", lp: "#4caf7d" };
 
 export interface PropertySummary {
   id: number;
@@ -119,6 +126,69 @@ export async function listProperties(sql: Sql): Promise<PropertySummary[]> {
     order by p.id
   `;
   return rows.map((r) => ({ id: Number(r.id), name: r.name, priceManYen: r.price_man_yen, lastAnalyzedAt: r.last_analyzed_at, insufficientCount: Number(r.insufficient_count ?? 0) }));
+}
+
+/** ?property がないときに開く物件：最後に分析した物件。分析した物件がなければ最初の物件（物件がなければ 0） */
+export function defaultPropertyId(properties: PropertySummary[]): number {
+  const latest = properties.reduce<PropertySummary | null>(
+    (m, p) => (p.lastAnalyzedAt !== null && (m?.lastAnalyzedAt == null || p.lastAnalyzedAt > m.lastAnalyzedAt) ? p : m),
+    null,
+  );
+  return latest?.id ?? properties[0]?.id ?? 0;
+}
+
+/** /strategy の物件の一覧の1件：物件の情報と、最新の成功した分析の要点 */
+export interface PropertyCard {
+  id: number;
+  name: string;
+  propertyType: string;
+  priceManYen: number | null;
+  address: string;
+  layout: string | null;
+  landSqm: number | null;
+  buildingSqm: number | null;
+  hasLocation: boolean;
+  lastAnalyzedAt: Date | null;
+  insufficientCount: number;
+  /** 第1ターゲット（採点ルール表の実行は総合点、古い実行はルールの点/満点） */
+  topTarget: { label: string; score: number; max: number | null; targetImage: string | null } | null;
+  salability: string | null;
+  totalBudgetManYen: number | null;
+}
+
+/** /strategy の物件の一覧（登録順）。分析していない物件も出す */
+export async function listPropertyCards(sql: Sql): Promise<PropertyCard[]> {
+  const rows = await sql<
+    { id: number; name: string; property_type: string; price_man_yen: number | null; address: string; layout: string | null; land_sqm: string | null; building_sqm: string | null; has_location: boolean; created_at: Date | null; insufficient: number | null; top: { label?: string; score?: number; max?: number; targetImage?: string | null } | null; salability: string | null; budget: string | null }[]
+  >`
+    with latest as (
+      select distinct on (property_id) id, property_id, created_at from analysis_runs where status = 'succeeded' order by property_id, id desc
+    )
+    select p.id, p.name, p.property_type, p.price_man_yen, p.address, p.layout, p.land_sqm, p.building_sqm, p.geom is not null as has_location, l.created_at,
+      (select count(*)::int from facts f where f.run_id = l.id and f.status in ('insufficient', 'not_available')) as insufficient,
+      (select f.basis->'ranking'->0 from facts f where f.run_id = l.id and f.key = 'decision.target_rank') as top,
+      (select f.basis->>'class' from facts f where f.run_id = l.id and f.key = 'decision.salability') as salability,
+      (select f.value from facts f where f.run_id = l.id and f.key = 'decision.total_budget') as budget
+    from properties p left join latest l on l.property_id = p.id
+    order by p.id
+  `;
+  const num = (v: string | null) => (v === null ? null : Number(v));
+  return rows.map((r) => ({
+    id: Number(r.id),
+    name: r.name,
+    propertyType: r.property_type,
+    priceManYen: r.price_man_yen,
+    address: r.address,
+    layout: r.layout,
+    landSqm: num(r.land_sqm),
+    buildingSqm: num(r.building_sqm),
+    hasLocation: r.has_location,
+    lastAnalyzedAt: r.created_at,
+    insufficientCount: Number(r.insufficient ?? 0),
+    topTarget: r.top?.label ? { label: r.top.label, score: Number(r.top.score ?? 0), max: r.top.max ?? null, targetImage: r.top.targetImage ?? null } : null,
+    salability: r.salability,
+    totalBudgetManYen: num(r.budget),
+  }));
 }
 
 /** 物件の最新の成功した分析を読む。runId を渡すと、その実行を読む（印刷・比較用。物件の実行でなければ null） */
@@ -252,6 +322,37 @@ export function nearbyFacilities(facts: ReportFact[]): NearbyFacility[] {
   return items.sort((a, b) => a.distanceM - b.distanceM);
 }
 
+export interface NearbyListItem { name: string; kind: string | null; straightM: number; walkMin: number }
+
+export interface NearbyLists {
+  /** 近い順に3校まで */
+  elementary: NearbyListItem[];
+  juniorHigh: NearbyListItem[];
+  /** 半径 nurseryRadiusM の中の保育園・幼稚園等（近い順） */
+  nurseries: NearbyListItem[];
+  nurseryRadiusM: number | null;
+}
+
+/**
+ * 周辺の学校・保育園の一覧（名前・種類・距離）。2026-10-12 以降の分析だけにある
+ * 学校は最寄りのカードの basis.nearby、保育園は 800m の数のカードの basis.facilities から作る
+ */
+export function nearbyLists(facts: ReportFact[]): NearbyLists {
+  type Raw = { name: string; kind: string | null; straight_m: number; walk_min: number };
+  const list = (key: string, field: "nearby" | "facilities") => {
+    const f = findFact(facts, key);
+    const raw = (f?.status === "ok" ? (f.basis as Record<string, unknown> | null)?.[field] : null) as Raw[] | null | undefined;
+    return (raw ?? []).map((r) => ({ name: r.name, kind: r.kind, straightM: r.straight_m, walkMin: r.walk_min }));
+  };
+  const nursery = findFact(facts, "facility.nursery_count_800m");
+  return {
+    elementary: list("facility.elementary_nearest", "nearby"),
+    juniorHigh: list("facility.junior_high_nearest", "nearby"),
+    nurseries: list("facility.nursery_count_800m", "facilities"),
+    nurseryRadiusM: (nursery?.scope as { meters?: number } | null)?.meters ?? null,
+  };
+}
+
 export interface AreaStat { label: string; value: string; sub: string }
 
 /** エリアの基本データ（人口構成。設計書5.3の①） */
@@ -294,26 +395,40 @@ export function targetRanking(facts: ReportFact[]): TargetRankItem[] {
   }));
 }
 
-/** decision.media.* を画面用にまとめる */
+/**
+ * decision.media.* を画面用にまとめる。媒体は実行ごとに判断カードにあるものを使う
+ * （採点ルール表の媒体は /rules で増減できる。2026-10-12より前の実行は sns・posting などの4媒体）
+ */
 export function mediaBreakdown(facts: ReportFact[]): MediaItem[] {
-  return MEDIA.map((m) => {
-    const f = findFact(facts, `decision.media.${m.id}`);
-    const basis = f?.basis as { share?: number; fixed_man_yen?: number | null; min_man_yen?: number | null; rules?: MediaItem["rules"] } | undefined;
-    return {
-      id: m.id,
-      label: m.label,
-      role: m.role,
-      amount: f?.value ?? 0,
-      share: basis?.share ?? 0,
-      fixedManYen: basis?.fixed_man_yen ?? null,
-      minManYen: basis?.min_man_yen ?? null,
-      rules: basis?.rules ?? [],
-    };
-  });
+  return facts
+    .filter((f) => f.key.startsWith("decision.media."))
+    .map((f) => {
+      const basis = (f.basis ?? {}) as {
+        media?: string; role?: string; share?: number; fixed_man_yen?: number | null; min_man_yen?: number | null; initial_man_yen?: number; rules?: MediaItem["rules"];
+        reach?: number; rank?: number; selected?: boolean; reach_basis?: NonNullable<MediaItem["evaluation"]>["basis"]; coefficient?: number; target_label?: string | null;
+      };
+      return {
+        id: f.key.slice("decision.media.".length),
+        label: basis.media ?? f.key,
+        role: basis.role ?? "",
+        amount: f.value ?? 0,
+        share: basis.share ?? 0,
+        initialManYen: basis.initial_man_yen ?? null,
+        evaluation:
+          basis.reach !== undefined
+            ? { reach: basis.reach, rank: basis.rank ?? 0, selected: basis.selected ?? (f.value ?? 0) > 0, basis: basis.reach_basis ?? null, coefficient: basis.coefficient ?? 1, targetLabel: basis.target_label ?? null }
+            : null,
+        fixedManYen: basis.fixed_man_yen ?? null,
+        minManYen: basis.min_man_yen ?? null,
+        rules: basis.rules ?? [],
+      };
+    });
 }
 
-/** 総予算のルール（kind=total_budget）がとり得る額。シミュレーションの選択肢に使う */
-export function totalBudgetOptions(rules: Rule[]): number[] {
+/** 予算のシミュレーションの選択肢。採点ルール表の実行は判断カードの options、古い実行は総予算のルールの額 */
+export function totalBudgetOptions(facts: ReportFact[], rules: Rule[]): number[] {
+  const options = (findFact(facts, "decision.total_budget")?.basis as { options?: number[] } | null)?.options;
+  if (Array.isArray(options)) return [...new Set(options)].sort((a, b) => a - b);
   const amounts = rules.filter((r) => r.enabled && r.kind === "total_budget").map((r) => (r.effect as { total_man_yen: number }).total_man_yen);
   return [...new Set(amounts)].sort((a, b) => a - b);
 }

@@ -5,6 +5,8 @@ import { NarrativeContentSchema, type NarrativeContent } from "../ai/schema";
 import type { ValidationResult } from "../ai/types";
 import type { AppealDef, CandidateDef } from "../rules/catalog";
 import { runRules, type Rule } from "../rules/engine";
+import { scoreProperty } from "../scoring/run";
+import { scoringSchemaReady } from "../scoring/schema-check";
 import type { AnalysisParams, FactDraft } from "../types";
 import { ANALYZERS, defaultParams, loadProperty } from "./run";
 import { loadActiveVersions } from "./versions";
@@ -161,18 +163,26 @@ export async function advanceRun(sql: Sql, runId: number, options: { withAi?: bo
         break;
       }
       case "rules": {
-        const property = await loadProperty(sql, Number(claim.property_id));
-        const params = { ...defaultParams(property.area_class), ...claim.params };
+        // 採点ルール表（設計書 D35）で、ペルソナの順位・訴求・予算・媒体配分を決める
+        // マイグレーション前・Excel の取り込み前は、旧ルール表（rules・target_candidates・appeal_items）で判断する
         const facts = await loadFactDrafts(sql, runId);
-        const rules = await sql<Rule[]>`select id, kind, condition, effect, note, enabled, version from rules order by id`;
-        const candidates = await sql<CandidateDef[]>`
-          select id, label, description, property_types, sort_order, enabled, confidence from target_candidates order by sort_order, id
-        `;
-        const appeals = await sql<AppealDef[]>`
-          select id, label, description, needs_facts, property_types, sort_order, enabled from appeal_items order by sort_order, id
-        `;
-        const decisions = runRules({ rules, candidates, appeals }, facts, property, params);
-        await insertFacts(sql, runId, decisions, facts.length + 1);
+        const scoringReady = (await scoringSchemaReady(sql)) && (await sql`select 1 from personas where enabled limit 1`).length > 0;
+        if (scoringReady) {
+          const { decisions, version } = await scoreProperty(sql, Number(claim.property_id), facts);
+          await insertFacts(sql, runId, decisions, facts.length + 1);
+          await sql`update analysis_runs set scoring_version = ${version} where id = ${runId}`;
+        } else {
+          const property = await loadProperty(sql, Number(claim.property_id));
+          const params = { ...defaultParams(property.area_class), ...claim.params };
+          const rules = await sql<Rule[]>`select id, kind, condition, effect, note, enabled, version from rules order by id`;
+          const candidates = await sql<CandidateDef[]>`
+            select id, label, description, property_types, sort_order, enabled, confidence from target_candidates order by sort_order, id
+          `;
+          const appeals = await sql<AppealDef[]>`
+            select id, label, description, needs_facts, property_types, sort_order, enabled from appeal_items order by sort_order, id
+          `;
+          await insertFacts(sql, runId, runRules({ rules, candidates, appeals }, facts, property, params), facts.length + 1);
+        }
         if (withAi) await nextStage(sql, runId, "ai");
         else await sql`update analysis_runs set status = 'succeeded', stage_started_at = null, finished_at = now() where id = ${runId}`;
         break;

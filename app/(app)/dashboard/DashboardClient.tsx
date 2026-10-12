@@ -9,6 +9,8 @@ export interface DashboardProperty {
   id: number;
   name: string;
   priceManYen: number | null;
+  /** 物件の写真。なければ共通の仮画像 */
+  photoUrl: string;
   lastAnalyzedAt: string | null;
   insufficientCount: number;
 }
@@ -90,10 +92,10 @@ export default function DashboardClient({ properties }: { properties: DashboardP
           <div>データ不足</div>
         </div>
         {rows.map((p) => (
-          <Link key={p.id} href={`/research/result?property=${p.id}`} className="grid grid-cols-[2.4fr_1fr_1fr] gap-2 py-3 px-1 border-b border-divider items-center">
+          <Link key={p.id} href={p.lastAnalyzedAt ? `/strategy?property=${p.id}` : `/properties/${p.id}`} className="grid grid-cols-[2.4fr_1fr_1fr] gap-2 py-3 px-1 border-b border-divider items-center">
             <div className="flex items-center gap-3">
               <div className="relative w-15 h-15 rounded-md shrink-0 overflow-hidden">
-                <Image src="/house.jpg" alt={p.name} fill sizes="56px" style={{ objectFit: "cover" }} />
+                <Image src={p.photoUrl} alt={p.name} fill sizes="56px" style={{ objectFit: "cover" }} />
               </div>
               <div>
                 <div className="text-base font-semibold">{p.name}</div>

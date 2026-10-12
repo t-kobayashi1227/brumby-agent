@@ -5,13 +5,36 @@ import { buildUserPrompt, SYSTEM_PROMPT } from "./prompt";
 import { NarrativeContentSchema, type NarrativeContent } from "./schema";
 import type { FactRow, PropertySummary, ValidationResult } from "./types";
 import { describeMismatches, validateNarrative } from "./validate";
+import { scoringSchemaReady } from "../scoring/schema-check";
 
 // AIの文章の生成（設計書 6.2・6.3）：下書き（段階「AI」）→ 検証・不合格なら1回だけ作り直し（段階「検証」）→ それでも不合格なら要確認のまま返す
 // AIに送るのは物件の最小限の情報とカードだけ（D28）。物件名・詳しい住所は送らない。ログにも物件の本文や住所を出さない
 
-/** まず Claude Sonnet 5。文章の質が足りなければ Opus 5.5 と比べる（設計書 6.2） */
-export const MODEL = "claude-sonnet-5";
-const MAX_TOKENS = 12000;
+/**
+ * モデル。.env.local（Vercel では環境変数）の ANTHROPIC_MODEL で変えられる
+ * PoC の開発テストでは安い Claude Haiku 5.5 を既定にする（2026-10-12）。文章の質が足りなければ claude-sonnet-5 などと比べる（設計書 6.2）
+ */
+export const MODEL = process.env.ANTHROPIC_MODEL?.trim() || "claude-haiku-5-5";
+/** 出力の上限。考える分（thinking）も含む。12000 では根拠が増えた分だけ考えて上限に達し、本文が出なかった（2026-10-12） */
+const MAX_TOKENS = 16000;
+
+const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+/**
+ * 考える深さ。ANTHROPIC_EFFORT で変えられる（low / medium / high / xhigh / max）
+ * 決まった判断を言い換える仕事なので low を既定にする（Sonnet 5 の high では考える分だけで 12000 を超えた）
+ */
+const EFFORT: (typeof EFFORTS)[number] = (EFFORTS as readonly string[]).includes(process.env.ANTHROPIC_EFFORT?.trim() ?? "")
+  ? (process.env.ANTHROPIC_EFFORT!.trim() as (typeof EFFORTS)[number])
+  : "low";
+
+/**
+ * Claude API のクライアント。workspace に紐づかないキー（sk-ant-usr… など）は、どの workspace で使うかを
+ * ヘッダー anthropic-workspace-id で伝える必要がある。ANTHROPIC_WORKSPACE_ID があれば付ける
+ */
+function createClient(): Anthropic {
+  const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+  return new Anthropic(workspaceId ? { defaultHeaders: { "anthropic-workspace-id": workspaceId } } : {});
+}
 
 export interface GenerateResult {
   content: NarrativeContent;
@@ -52,9 +75,10 @@ export function roundAddress(address: string, areaName: string | null): string {
 
 async function loadPropertySummary(sql: Sql, runId: number): Promise<PropertySummary> {
   const [row] = await sql<
-    { id: number; property_type: string; price_man_yen: number | null; address: string; area_name: string | null; layout: string | null; land_sqm: string | null; building_sqm: string | null; parking: number | null; access: string | null; features: string | null; competitors: number }[]
+    { id: number; property_type: string; price_man_yen: number | null; address: string; area_name: string | null; layout: string | null; land_sqm: string | null; building_sqm: string | null; parking: number | null; access: string | null; features: string | null; age_years: number | null; is_hiraya: boolean | null; has_garden: boolean | null; competitors: number }[]
   >`
     select p.id, p.property_type, p.price_man_yen, p.address, p.layout, p.land_sqm, p.building_sqm, p.parking, p.access, p.features,
+      ${(await scoringSchemaReady(sql)) ? sql`p.age_years, p.is_hiraya, p.has_garden,` : sql`null::smallint as age_years, null::boolean as is_hiraya, null::boolean as has_garden,`}
       (select a.city_name || coalesce(a.name, '') from areas a join dataset_versions v on v.id = a.dataset_version_id
         where v.status = 'active' and p.geom is not null and extensions.st_intersects(a.geom, p.geom) limit 1) as area_name,
       (select count(*)::int from competitors c where c.property_id = p.id) as competitors
@@ -73,18 +97,24 @@ async function loadPropertySummary(sql: Sql, runId: number): Promise<PropertySum
     parking: row.parking,
     access: row.access,
     features: row.features,
+    ageYears: row.age_years,
+    isHiraya: row.is_hiraya,
+    hasGarden: row.has_garden,
     competitorCount: row.competitors,
   };
 }
 
 /** 検証で「入力にない設備」を見分けるための、物件の入力をつないだ文 */
 function propertyText(p: PropertySummary): string {
-  return [p.layout, p.access, p.features, p.parking ? `駐車場${p.parking}台` : null].filter(Boolean).join(" ");
+  return [p.layout, p.access, p.features, p.parking ? `駐車場${p.parking}台` : null, p.isHiraya ? "平屋" : null, p.hasGarden ? "庭あり" : null].filter(Boolean).join(" ");
 }
 
 function extractParsed(message: ParsedMessage<NarrativeContent>): NarrativeContent {
   if (message.stop_reason === "refusal") {
     throw new Error(`AIが生成を断りました（${message.stop_details?.category ?? "理由の分類なし"}）`);
+  }
+  if (message.stop_reason === "max_tokens") {
+    throw new Error(`AIの出力が上限（${MAX_TOKENS}トークン、うち考える分 ${message.usage.output_tokens_details?.thinking_tokens ?? "不明"}）に達して途中で止まりました`);
   }
   if (!message.parsed_output) {
     const text = message.content.find((b): b is Anthropic.TextBlock => b.type === "text")?.text ?? "";
@@ -97,7 +127,7 @@ function extractParsed(message: ParsedMessage<NarrativeContent>): NarrativeConte
 async function callClaude(client: Anthropic, outputFormat: AutoParseableOutputFormat<NarrativeContent>, messages: Anthropic.Messages.MessageParam[], retries = 2): Promise<ParsedMessage<NarrativeContent>> {
   for (let i = 0; ; i++) {
     try {
-      return await client.messages.parse({ model: MODEL, max_tokens: MAX_TOKENS, system: SYSTEM_PROMPT, messages, output_config: { format: outputFormat } });
+      return await client.messages.parse({ model: MODEL, max_tokens: MAX_TOKENS, system: SYSTEM_PROMPT, messages, output_config: { effort: EFFORT, format: outputFormat } });
     } catch (error) {
       if (i >= retries) throw error;
       await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
@@ -132,7 +162,7 @@ async function loadContext(sql: Sql, runId: number) {
 export async function draftNarrative(sql: Sql, runId: number): Promise<{ content: NarrativeContent } & Usage> {
   const { prompt } = await loadContext(sql, runId);
   const usage: Usage = { inputTokens: 0, outputTokens: 0, durationMs: 0 };
-  const content = await callAndCount(new Anthropic(), [{ role: "user", content: prompt }], usage);
+  const content = await callAndCount(createClient(), [{ role: "user", content: prompt }], usage);
   return { content, ...usage };
 }
 
@@ -160,7 +190,7 @@ export async function verifyNarrative(sql: Sql, runId: number, draft: NarrativeC
         ].join("\n\n"),
       },
     ];
-    content = await callAndCount(new Anthropic(), messages, total);
+    content = await callAndCount(createClient(), messages, total);
     validation = validateNarrative(content, facts, ctx);
     attempts = 2;
   }

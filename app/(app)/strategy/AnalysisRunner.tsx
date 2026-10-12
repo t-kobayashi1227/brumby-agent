@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { card, btnPrimary, fieldLabel } from "../../_lib/ui";
@@ -27,12 +27,15 @@ const STAGES: { key: Stage; label: string; note: string }[] = [
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export default function AnalysisRunner({ propertyId, lastRadius }: { propertyId: number; lastRadius: number | null }) {
+export default function AnalysisRunner({ propertyId, autoStart = false }: { propertyId: number; autoStart?: boolean }) {
   const router = useRouter();
   const [radius, setRadius] = useState<number | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const running = progress?.status === "running";
+  const started = useRef(false);
+  // 物件の画面から来たとき（?autorun=1）は、開いたらすぐ実行する。終わったら URL から autorun を外す（読み直しで二重に動かさない）
+  const cleanUrl = `/strategy?property=${propertyId}`;
 
   async function run() {
     setError(null);
@@ -46,12 +49,24 @@ export default function AnalysisRunner({ propertyId, lastRadius }: { propertyId:
         // ほかの画面が同じ実行を進めているときは、少し待ってから見直す
         if (p.status === "running" && p.stage === before) await sleep(2000);
       }
-      router.refresh();
+      // 終わったら結果を読み直す。done= を付けて、画面の上に「分析が終わりました」を出し続ける
+      if (p.status === "succeeded") router.replace(`${cleanUrl}&done=${p.runId}`);
+      else if (autoStart) window.history.replaceState(null, "", cleanUrl);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setProgress(null);
+      if (autoStart) window.history.replaceState(null, "", cleanUrl);
     }
   }
+
+  useEffect(() => {
+    if (autoStart && !started.current) {
+      started.current = true;
+      void run();
+    }
+    // run は描画ごとに作り直されるが、最初の1回だけ呼べばよい
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
 
   const currentIndex = progress?.stage ? STAGES.findIndex((s) => s.key === progress.stage) : -1;
   const stateOf = (i: number) => {
@@ -92,7 +107,6 @@ export default function AnalysisRunner({ propertyId, lastRadius }: { propertyId:
           {running ? "実行中…" : "分析する"}
         </button>
       </div>
-      {lastRadius !== null && <div className="text-[11px] text-muted mt-2">表示中の結果の半径：{lastRadius.toLocaleString("ja-JP")}m</div>}
 
       {progress && (
         <ol className="mt-4 grid grid-cols-4 gap-2">

@@ -123,7 +123,7 @@ export async function saveRule(_prev: ActionState, formData: FormData): Promise<
         returning id
       `;
       if (rows.length === 0) throw new Error(`ルール ${id} がありません`);
-      revalidatePath("/rules");
+      revalidatePath("/rules/legacy");
       return { ok: `${id} を保存しました` };
     }
 
@@ -136,7 +136,7 @@ export async function saveRule(_prev: ActionState, formData: FormData): Promise<
       insert into rules (id, kind, condition, effect, note, enabled, updated_by)
       values (${newId}, ${kind}, ${sql.json(condition as never)}, ${sql.json(effect as never)}, ${note}, ${enabled}, ${updatedBy})
     `;
-    revalidatePath("/rules");
+    revalidatePath("/rules/legacy");
     return { ok: `${newId} を追加しました` };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
@@ -148,7 +148,7 @@ export async function deleteRule(_prev: ActionState, formData: FormData): Promis
     const id = text(formData, "id");
     const rows = await getSql()`delete from rules where id = ${id} returning id`;
     if (rows.length === 0) throw new Error(`ルール ${id} がありません`);
-    revalidatePath("/rules");
+    revalidatePath("/rules/legacy");
     return { ok: `${id} を削除しました（変更の履歴に、削除前の内容が残っています）` };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };

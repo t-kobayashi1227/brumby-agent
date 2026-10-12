@@ -1,231 +1,314 @@
+import Link from "next/link";
 import { getSql } from "../../../lib/db";
-import { MEDIA, type AppealDef, type CandidateDef } from "../../../lib/rules/catalog";
-import { KIND_LABEL, describeCondition, describeEffect, type EffectNames } from "../../../lib/rules/describe";
-import type { Condition, Effect, Rule } from "../../../lib/rules/engine";
-import { card } from "../../_lib/ui";
-import RuleForm, { DeleteRuleButton, type RuleFormOptions } from "./RuleForm";
+import { ITEM_LABEL } from "../../../lib/scoring/constants";
+import { responseCoefficients } from "../../../lib/scoring/engine";
+import { loadScoringConfig } from "../../../lib/scoring/load";
+import { SCORING_TABLES, type TableDef } from "../../../lib/scoring/tables";
+import { scoringSchemaReady } from "../../../lib/scoring/schema-check";
+import { card, emptyState } from "../../_lib/ui";
+import MediaResultsPanel from "./MediaResultsPanel";
+import { ScoringRowForm } from "./ScoringRowForm";
 
-// ルール表：販売戦略（狙う層・訴求・予算配分）を決めている判断基準を見て、その場で直す（設計書 D14）
-// 狙う層の候補と訴求の素材は DB の表（D22・D23）。この画面では一覧を表示し、編集は当面 Studio で行う
-// DBを毎回読み直す（直した内容がすぐ表示されるように）
+// 採点ルール表（設計書 D35）：物件の評価（ペルソナ×5つの層×重み）を決めている表を見て、その場で直す
+// 元は BRUMBY様と作った Excel「採点ルール表」。シートごとにタブを分ける。変更は変更履歴に残る
 export const dynamic = "force-dynamic";
 
-interface RuleRow extends Rule {
-  updated_by: string | null;
-  updated_at: Date;
-}
+const TABS: { key: string; label: string }[] = [
+  { key: "overview", label: "計算の考え方" },
+  { key: "personas", label: "ペルソナ" },
+  { key: "scoring_rules", label: "採点ルール" },
+  { key: "scoring_items", label: "項目の重視度" },
+  { key: "scoring_params", label: "重み・前提・予算" },
+  { key: "competitor_items", label: "競合重視度" },
+  { key: "market_reference", label: "相場" },
+  { key: "area_popularity", label: "エリア人気" },
+  { key: "media", label: "媒体・反響" },
+  { key: "history", label: "変更履歴" },
+];
 
-interface Revision {
-  id: number;
-  table_name: "rules" | "target_candidates" | "appeal_items";
-  rule_id: string;
-  operation: "insert" | "update" | "delete";
-  snapshot: { condition?: Condition; effect?: Effect; note?: string; label?: string; enabled: boolean; version?: number; updated_by: string | null };
-  changed_at: Date;
-}
+const PARAM_CATEGORY: Record<string, string> = { layer_weight: "層の重み", purchase: "購入前提", budget: "予算の決め方", media: "媒体配分" };
 
-/** 計算の手順の順に並べる */
-const KIND_ORDER: Rule["kind"][] = ["target_score", "appeal_score", "total_budget", "media_weight", "min_spend"];
+type Row = Record<string, unknown>;
 
-const KIND_HELP: Record<Rule["kind"], string> = {
-  target_score: "当てはまったルールの点数を足して、狙う層の順位を決めます。1位の点が基準（初期値2点）に届かなければ「絞り込めない」とします。同点なら併記します。",
-  appeal_score: "必要なカードが取れている訴求の素材に、当てはまったルールの点数を足し、上位3つを使います。AIは選ばれた素材を言い換えるだけです。",
-  total_budget: "物件の登録で総予算が入力されていれば、それを使います。入力がないときだけ、当てはまったルールの額を提案値にします（複数当てはまれば一番大きい額）。",
-  media_weight: "「出発点」の重みに、当てはまったルールの倍率を掛け、その比率で総予算を分けます。",
-  min_spend: "固定額・最低額を先に当てはめてから、残りを重みの比率で分けます。最後に千円単位に丸めます。",
-};
-
-const OPERATION_LABEL: Record<Revision["operation"], string> = { insert: "追加", update: "変更", delete: "削除" };
-
+const fmt = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v));
 const formatDate = (d: Date) => new Date(d).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 
-function RuleItem({ rule, names, options }: { rule: RuleRow; names: EffectNames; options: RuleFormOptions }) {
-  return (
-    <div className={`border-t border-line py-3.5 ${rule.enabled ? "" : "opacity-55"}`}>
-      <div className="flex gap-3 items-start">
-        <div className="w-12 shrink-0 text-xs font-bold text-sub pt-0.5">{rule.id}</div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[13px] text-ink leading-[1.8]">
-            {"always" in rule.condition ? (
-              <span className="text-muted">条件なし（いつも） → </span>
-            ) : (
-              <>
-                <span className="text-muted">もし </span>
-                {describeCondition(rule.condition)}
-                <span className="text-muted"> なら → </span>
-              </>
-            )}
-            <span className="font-bold">{describeEffect(rule.effect, names)}</span>
-          </div>
-          <div className="text-xs text-body mt-1">理由：{rule.note}</div>
-          <div className="text-[11px] text-muted mt-1">
-            版 {rule.version}・最終更新 {formatDate(rule.updated_at)}
-            {rule.updated_by ? `（${rule.updated_by}）` : ""}
-          </div>
-        </div>
-        <div className="shrink-0">
-          {rule.enabled ? (
-            <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#dcf5df] text-[#157347]">使う</span>
-          ) : (
-            <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-bold bg-divider text-muted">使わない</span>
-          )}
-        </div>
-      </div>
+/** 一覧の1行の見出し（開くとフォーム） */
+function summaryOf(table: string, r: Row): React.ReactNode {
+  switch (table) {
+    case "personas":
+      return (
+        <>
+          <b className="mr-2">{fmt(r.id)}</b>
+          {fmt(r.label)}
+          <span className="ml-2 text-muted">
+            {fmt(r.rep_age)}歳・頭金{Math.round(Number(r.down_payment_rate) * 100)}%・{r.purchase_method === "cash" ? "現金" : "ローン"}
+          </span>
+          {r.enabled === false && <span className="ml-2 text-muted">（使わない）</span>}
+        </>
+      );
+    case "scoring_rules": {
+      const fit = (r.fit ?? {}) as Record<string, string>;
+      const range = r.lower_bound === null && r.upper_bound === null ? "" : `${fmt(r.lower_bound) === "—" ? "" : r.lower_bound}〜${fmt(r.upper_bound) === "—" ? "" : r.upper_bound}`;
+      return (
+        <>
+          <b className="mr-2">{fmt(r.id)}</b>
+          <span className="text-muted mr-2">
+            {fmt(r.layer)}・{ITEM_LABEL[String(r.item_key)] ?? fmt(r.item_key)} {range}
+          </span>
+          {fmt(r.reason)}
+          <span className="ml-2 font-mono text-[11px]">
+            {Object.entries(fit)
+              .sort()
+              .map(([k, v]) => `${k}${v}`)
+              .join(" ")}
+          </span>
+          {r.basis_class ? <span className="ml-2 text-[10px] text-muted">［{String(r.basis_class)}］</span> : null}
+          {r.enabled === false && <span className="ml-2 text-muted">（使わない）</span>}
+        </>
+      );
+    }
+    case "scoring_items":
+    case "competitor_items": {
+      const imp = (r.importance ?? {}) as Record<string, number>;
+      return (
+        <>
+          <b className="mr-2">{ITEM_LABEL[String(r.key)] ?? fmt(r.label ?? r.key)}</b>
+          <span className="text-muted mr-2">{fmt(r.key)}</span>
+          <span className="font-mono text-[11px]">
+            {Object.entries(imp)
+              .sort()
+              .map(([k, v]) => `${k}:${v}`)
+              .join(" ")}
+          </span>
+        </>
+      );
+    }
+    case "scoring_params":
+      return (
+        <>
+          <span className="text-muted mr-2">［{PARAM_CATEGORY[String(r.category)] ?? fmt(r.category)}］</span>
+          {fmt(r.label)}
+          <b className="ml-2">{fmt(r.value)}</b>
+        </>
+      );
+    case "market_reference":
+      return (
+        <>
+          <b className="mr-2">
+            {fmt(r.ward)}・{fmt(r.age_class)}
+          </b>
+          {fmt(r.price_man_yen)}万円<span className="ml-2 text-muted">延床{fmt(r.building_sqm)}㎡・土地{fmt(r.land_sqm)}㎡・{fmt(r.n)}件</span>
+        </>
+      );
+    case "area_popularity":
+      return (
+        <>
+          <b className="mr-2">
+            {fmt(r.ward)}
+            {fmt(r.town)}
+          </b>
+          {fmt(r.score)}点<span className="ml-2 text-muted">市内{fmt(r.city_rank)}位</span>
+        </>
+      );
+    case "media_channels":
+      return (
+        <>
+          <b className="mr-2">{fmt(r.label)}</b>
+          <span className="text-muted">{r.stat_name ? `統計：${String(r.stat_name)}` : `一律 ${fmt(r.flat_reach)}`}</span>
+          {r.enabled === false && <span className="ml-2 text-muted">（使わない）</span>}
+        </>
+      );
+    case "media_usage_rates":
+      return (
+        <>
+          <b className="mr-2">{fmt(r.stat_name)}</b>
+          <span className="text-muted">全年代 {fmt(r.all_ages)}%</span>
+        </>
+      );
+    default:
+      return fmt(r.id ?? r.key);
+  }
+}
 
-      <details className="ml-15 mt-2">
-        <summary className="text-xs text-brand font-bold cursor-pointer select-none">このルールを直す・削除する</summary>
-        <div className="mt-3 grid gap-3">
-          <RuleForm rule={{ id: rule.id, kind: rule.kind, condition: rule.condition, effect: rule.effect, note: rule.note, enabled: rule.enabled }} options={options} />
-          <DeleteRuleButton id={rule.id} />
-        </div>
-      </details>
+async function TableEditor({ def, personaIds, where }: { def: TableDef; personaIds: string[]; where?: { ward: string } }) {
+  const sql = getSql();
+  const rows = await sql<Row[]>`
+    select * from ${sql(def.table)} ${where ? sql`where ward = ${where.ward}` : sql``} order by ${sql.unsafe(def.orderBy)}
+  `;
+  return (
+    <div className={`${card} p-5`}>
+      <div className="text-[13px] font-bold text-ink">{def.label}</div>
+      <div className="text-[11px] text-muted mt-1 mb-3 leading-[1.7]">
+        {def.note}（Excel：{def.sheet}）
+      </div>
+      {rows.length === 0 && <div className="text-xs text-muted py-3">行がありません。npm run import-scoring で Excel を取り込むか、下の「行を追加」で入れてください。</div>}
+      {rows.map((r) => (
+        <details key={def.fields.filter((f) => f.pk).map((f) => String(r[f.name])).join("/")} className="border-t border-line">
+          <summary className="py-2.5 text-[13px] text-body cursor-pointer select-none">{summaryOf(def.table, r)}</summary>
+          <div className="pb-4">
+            <ScoringRowForm def={def} values={r} personaIds={personaIds} mode="update" />
+            {r.updated_at instanceof Date && (
+              <div className="text-[10px] text-muted mt-2">
+                最終更新 {formatDate(r.updated_at)}
+                {r.updated_by ? `（${String(r.updated_by)}）` : ""}
+              </div>
+            )}
+          </div>
+        </details>
+      ))}
+      {def.canAdd && (
+        <details className="border-t border-line">
+          <summary className="py-2.5 text-xs text-brand font-bold cursor-pointer select-none">＋ 行を追加</summary>
+          <div className="pb-4">
+            <ScoringRowForm def={def} values={where ? { ward: where.ward } : {}} personaIds={personaIds} mode="insert" />
+          </div>
+        </details>
+      )}
     </div>
   );
 }
 
-export default async function RulesPage() {
+function Overview() {
+  return (
+    <div className={`${card} p-5.5 text-[13px] text-body leading-[1.9]`}>
+      <div className="text-base font-extrabold text-ink mb-2">物件の評価のしかた（採点ルール表）</div>
+      <ol className="grid gap-1.5 list-decimal pl-5">
+        <li>ペルソナごとに、5つの層（物件・購入可能性・生活環境・市場・競合）を0〜100点で採点します。</li>
+        <li>
+          物件・生活環境・市場：当てはまったルールの点（適合度 ◎+2〜×−2 × 項目の重視度 × 1段階の点数）を足した「素点」を、取りうる最大の点「満点」で割ります。
+          <span className="text-muted">値が取れない項目は、素点からも満点からも外し、画面に「データなし」と出します。</span>
+        </li>
+        <li>購入可能性：ローン返済から逆算した必要年収を、そのペルソナの世帯の何%が上回るかで採点します（現金で買うペルソナは、今の家の売却見込み＋貯蓄で判定）。「世帯年収○○万円以上」というターゲット像も出します。</li>
+        <li>競合：項目ごとの勝ち負けを、ペルソナの重視度で重み付けします。競合が未入力なら、この層を外して残りで計算します。</li>
+        <li>総合＝5つの層×層の重み（85%）＋ 統計上の買い手の多さ（15%）。上位3つが第1〜第3ターゲットです。</li>
+        <li>訴求ポイント：競合（なければ同じ区・築年数区分の取引の中央値）と比べて勝つ項目×第1ターゲットの重視度。</li>
+        <li>予算：売れやすさ（エリア人気・価格の相場比・第1ターゲットの適合度）で倍率を決め、物件価格×基準率に掛けます。最初に一部を使い、反響が少なければ追加します。</li>
+        <li>媒体：第1ターゲットへの届きやすさ（年代別の利用率）× 反響係数（反響の記録）の上位の媒体に配分します。</li>
+      </ol>
+      <div className="mt-3 text-xs text-muted">
+        表を直すと、次の分析から使います（前の分析の結果は変わりません。販売戦略の「前回の結果と比べる」で、版ごとの違いを確かめられます）。前の方式のルール表は
+        <Link href="/rules/legacy" className="text-brand underline mx-1">こちら</Link>
+        に残しています。
+      </div>
+    </div>
+  );
+}
+
+async function History() {
+  const rows = await getSql()<{ id: number; table_name: string; row_key: string; operation: string; before: Row | null; after: Row | null; reason: string | null; related_property: string | null; changed_by: string | null; changed_at: Date }[]>`
+    select id, table_name, row_key, operation, before, after, reason, related_property, changed_by, changed_at
+    from scoring_revisions order by changed_at desc, id desc limit 200
+  `;
+  const label = (t: string) => SCORING_TABLES[t]?.label ?? (t === "excel" ? "Excel の変更履歴" : t);
+  /** 変わった列だけを「前 → 後」で出す */
+  const diff = (b: Row | null, a: Row | null) => {
+    if (!b || !a) return null;
+    return Object.keys(a)
+      .filter((k) => !["updated_at", "updated_by"].includes(k) && JSON.stringify(a[k]) !== JSON.stringify(b[k]))
+      .map((k) => `${k}：${fmt(b[k])} → ${fmt(a[k])}`)
+      .join("　");
+  };
+  return (
+    <div className={`${card} p-5`}>
+      <div className="text-[13px] font-bold text-ink mb-3">変更履歴（新しい順・200件まで）</div>
+      {rows.length === 0 && <div className="text-xs text-muted">まだ変更はありません。</div>}
+      {rows.map((r) => (
+        <div key={r.id} className="border-t border-line py-2.5 text-xs text-body">
+          <div className="flex flex-wrap gap-x-3">
+            <span className="text-muted">{formatDate(r.changed_at)}</span>
+            <span className="font-bold">
+              {label(r.table_name)}・{r.row_key}
+            </span>
+            <span>{r.operation === "insert" ? "追加" : r.operation === "delete" ? "削除" : "変更"}</span>
+            {r.changed_by && <span className="text-muted">（{r.changed_by}）</span>}
+            {r.related_property && <span className="text-muted">関連物件：{r.related_property}</span>}
+            <span className="text-muted">版 {r.id}</span>
+          </div>
+          {r.reason && <div className="mt-0.5">理由：{r.reason}</div>}
+          {r.table_name === "excel" ? (
+            <div className="mt-0.5 text-muted">
+              {fmt((r.before as { value?: unknown } | null)?.value)} → {fmt((r.after as { value?: unknown } | null)?.value)}
+            </div>
+          ) : (
+            r.operation === "update" && <div className="mt-0.5 text-muted break-all">{diff(r.before, r.after)}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default async function ScoringRulesPage({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
+  const sp = await searchParams;
+  const tab = TABS.some((t) => t.key === sp.tab) ? String(sp.tab) : "overview";
   const sql = getSql();
-  const rules = await sql<RuleRow[]>`
-    select id, kind, condition, effect, note, enabled, version, updated_by, updated_at from rules order by id
-  `;
-  const revisions = await sql<Revision[]>`
-    select id, table_name, rule_id, operation, snapshot, changed_at from rule_revisions order by id desc limit 30
-  `;
-  const candidates = await sql<CandidateDef[]>`
-    select id, label, description, property_types, sort_order, enabled, confidence from target_candidates order by sort_order, id
-  `;
-  const appeals = await sql<AppealDef[]>`
-    select id, label, description, needs_facts, property_types, sort_order, enabled from appeal_items order by sort_order, id
-  `;
-  const names: EffectNames = {
-    candidates: new Map(candidates.map((c) => [c.id, c.label])),
-    appeals: new Map(appeals.map((a) => [a.id, a.label])),
-  };
-  const options: RuleFormOptions = {
-    candidates: candidates.map((c) => ({ id: c.id, label: c.label })),
-    appeals: appeals.map((a) => ({ id: a.id, label: a.label })),
-  };
-  const latestRevision = revisions[0]?.id ?? null;
+  if (!(await scoringSchemaReady(sql))) {
+    return (
+      <div className={emptyState}>
+        採点ルール表の表がまだ共有DBにありません（マイグレーション 20261012100000_scoring.sql を反映してください）。それまでの分析は旧ルール表で判断します（
+        <Link href="/rules/legacy" className="text-brand underline">旧ルール表</Link>）。
+      </div>
+    );
+  }
+  const personas = await sql<{ id: string }[]>`select id from personas order by sort_order, id`;
+  const personaIds = personas.length ? personas.map((p) => p.id) : ["A", "B", "C", "D", "E", "F", "G", "H"];
+  const [version] = await sql<{ v: string | null }[]>`select max(id) as v from scoring_revisions`;
+
+  let body: React.ReactNode;
+  if (tab === "overview") body = <Overview />;
+  else if (tab === "history") body = <History />;
+  else if (tab === "media") {
+    const config = await loadScoringConfig(sql);
+    const coefficients = responseCoefficients(config);
+    const results = await sql<{ id: number; property_id: number | null; media_id: string; started_on: Date | null; cost_yen: number; inquiries: number; visits: number; contracts: number; memo: string | null }[]>`
+      select id, property_id, media_id, started_on, cost_yen, inquiries, visits, contracts, memo from media_results order by started_on desc nulls last, id desc
+    `;
+    const properties = await sql<{ id: number; name: string }[]>`select id, name from properties order by id`;
+    body = (
+      <div className="grid gap-4">
+        <TableEditor def={SCORING_TABLES.media_channels} personaIds={personaIds} />
+        <TableEditor def={SCORING_TABLES.media_usage_rates} personaIds={personaIds} />
+        <MediaResultsPanel
+          media={config.media.map((m) => ({ id: m.id, label: m.label, coefficient: coefficients[m.id] ?? 1 }))}
+          results={results.map((r) => ({ ...r, id: Number(r.id), property_id: r.property_id === null ? null : Number(r.property_id), started_on: r.started_on ? new Date(r.started_on).toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }) : null }))}
+          properties={properties.map((p) => ({ id: Number(p.id), name: p.name }))}
+          minInquiries={config.params["係数を使い始める問い合わせ数"] ?? 10}
+        />
+      </div>
+    );
+  } else if (tab === "area_popularity") {
+    const wards = await sql<{ ward: string; n: number }[]>`select ward, count(*)::int as n from area_popularity group by ward order by ward`;
+    const ward = typeof sp.ward === "string" && wards.some((w) => w.ward === sp.ward) ? sp.ward : wards[0]?.ward;
+    body = (
+      <div className="grid gap-3">
+        <div className="flex flex-wrap gap-1.5">
+          {wards.map((w) => (
+            <Link key={w.ward} href={`/rules?tab=area_popularity&ward=${encodeURIComponent(w.ward)}`} className={`px-3 py-1 rounded-full text-xs ${w.ward === ward ? "bg-brand text-white font-bold" : "bg-white border border-field text-body"}`}>
+              {w.ward}（{w.n}）
+            </Link>
+          ))}
+        </div>
+        {ward ? <TableEditor def={SCORING_TABLES.area_popularity} personaIds={personaIds} where={{ ward }} /> : <TableEditor def={SCORING_TABLES.area_popularity} personaIds={personaIds} />}
+      </div>
+    );
+  } else body = <TableEditor def={SCORING_TABLES[tab]} personaIds={personaIds} />;
 
   return (
     <div className="grid gap-4">
-      <div className={`${card} p-5.5`}>
-        <div className="text-base font-extrabold text-ink mb-2">販売戦略の判断基準（ルール表）</div>
-        <div className="text-[13px] text-body leading-[1.9]">
-          物件を分析すると、周りのデータから作った「事実カード」（人口構成・周辺施設・相場など）に、このルールを当てはめて、
-          <span className="font-bold">狙う層の順位</span>、<span className="font-bold">訴求ポイント</span>、<span className="font-bold">広告の予算配分</span>を決めます。
-          毎回同じルールで計算するので、同じ物件・同じ条件なら同じ結果になります。
-        </div>
-        <ol className="mt-3 grid gap-1 text-xs text-body">
-          <li>1. 狙う層の候補に点数を付けて順位を出す</li>
-          <li>2. 訴求の素材に点数を付け、上位3つを選ぶ</li>
-          <li>3. 総予算を決める（入力があればそれ、なければルールの提案値）</li>
-          <li>4. 媒体の重み → 比率 → 固定額・最低額 → 千円単位に丸める</li>
-          <li>5. 効いたルールを記録する（レポートで「なぜこの配分か」を説明するため）</li>
-        </ol>
-        <div className="mt-3 rounded-md border border-[#f0d9a8] bg-[#fff8e8] px-3.5 py-2 text-xs text-[#8a5a00]">
-          今のルールはすべて仮です（プロトタイプの配分表が出発点）。打ち合わせで伺いながら直していきます。
-        </div>
-        <div className="mt-2 text-[11px] text-muted">
-          ルール {rules.length}件・使っているもの {rules.filter((r) => r.enabled).length}件{latestRevision !== null ? `・ルールの版（最新の変更番号）${latestRevision}` : ""}
-        </div>
+      <div className="flex flex-wrap items-baseline gap-3">
+        <div className="text-base font-extrabold text-ink">採点ルール表</div>
+        <div className="text-xs text-muted">設定の版 {version?.v ?? "—"}（直すたびに増えます）</div>
       </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className={`${card} p-5`}>
-          <div className="text-[13px] font-bold text-ink mb-1">狙う層の候補</div>
-          <div className="text-[11px] text-muted mb-3">表 target_candidates（当面は Studio で直す）</div>
-          <ul className="grid gap-2">
-            {candidates.map((c) => (
-              <li key={c.id} className={`text-xs text-body leading-[1.7] ${c.enabled ? "" : "opacity-55"}`}>
-                <span className="font-bold text-ink">{c.label}</span>
-                <span className="text-muted">（{c.id}・{c.property_types?.length ? c.property_types.join("・") : "全種別"}{c.confidence === "low" ? "・仮説" : ""}{c.enabled ? "" : "・使わない"}）</span>
-                <br />
-                {c.description}
-              </li>
-            ))}
-            {candidates.length === 0 && <li className="text-xs text-muted">まだありません（npm run seed-rules で入れる）</li>}
-          </ul>
-        </div>
-        <div className={`${card} p-5`}>
-          <div className="text-[13px] font-bold text-ink mb-1">訴求の素材</div>
-          <div className="text-[11px] text-muted mb-3">表 appeal_items（当面は Studio で直す）。必要なカードが取れていない素材は選ばれません</div>
-          <ul className="grid gap-2">
-            {appeals.map((a) => (
-              <li key={a.id} className={`text-xs text-body leading-[1.7] ${a.enabled ? "" : "opacity-55"}`}>
-                <span className="font-bold text-ink">{a.label}</span>
-                <span className="text-muted">（{a.id}{a.property_types?.length ? `・${a.property_types.join("・")}` : ""}{a.enabled ? "" : "・使わない"}）</span>
-                <br />
-                必要なカード：{a.needs_facts.length ? a.needs_facts.join("、") : "なし"}
-              </li>
-            ))}
-            {appeals.length === 0 && <li className="text-xs text-muted">まだありません（npm run seed-rules で入れる）</li>}
-          </ul>
-        </div>
-        <div className={`${card} p-5`}>
-          <div className="text-[13px] font-bold text-ink mb-3">媒体</div>
-          <ul className="grid gap-2">
-            {MEDIA.map((m) => (
-              <li key={m.id} className="text-xs text-body leading-[1.7]">
-                <span className="font-bold text-ink">{m.label}</span>
-                <br />
-                {m.role}
-              </li>
-            ))}
-          </ul>
-        </div>
+      {personas.length === 0 && <div className={emptyState}>採点ルール表がまだ取り込まれていません。npm run import-scoring -- &quot;採点ルール表.xlsx のパス&quot; で取り込んでください。</div>}
+      <div className="flex flex-wrap gap-1 border-b border-line">
+        {TABS.map((t) => (
+          <Link key={t.key} href={`/rules?tab=${t.key}`} className={`px-3.5 py-2 text-[13px] -mb-px border-b-2 ${t.key === tab ? "border-brand text-brand font-bold" : "border-transparent text-body"}`}>
+            {t.label}
+          </Link>
+        ))}
       </div>
-
-      <div className={`${card} p-5`}>
-        <details id="add-rule">
-          <summary className="text-[13px] font-bold text-brand cursor-pointer select-none">＋ ルールを追加する</summary>
-          <div className="text-xs text-muted mt-2 mb-3">
-            種類を選び、条件（何を見るか・比べ方）と効果を組み立てます。条件で見る値は、分析で作る事実カードや物件の情報の一覧から選びます。
-          </div>
-          <RuleForm options={options} />
-        </details>
-      </div>
-
-      {KIND_ORDER.map((kind, i) => {
-        const list = rules.filter((r) => r.kind === kind);
-        return (
-          <div key={kind} className={`${card} p-5`}>
-            <div className="text-[13px] font-bold text-ink">
-              {i + 1}. {KIND_LABEL[kind]}（{list.length}件）
-            </div>
-            <div className="text-xs text-muted mt-1 mb-2">{KIND_HELP[kind]}</div>
-            {list.map((r) => (
-              <RuleItem key={r.id} rule={r} names={names} options={options} />
-            ))}
-          </div>
-        );
-      })}
-
-      <div className={`${card} p-5`}>
-        <div className="text-[13px] font-bold text-ink mb-1">変更の履歴（新しい順、30件まで）</div>
-        <div className="text-xs text-muted mb-3">ルール・狙う層の候補・訴求の素材を追加・変更・削除すると、自動で残ります。変更後の内容を表示しています。</div>
-        <div className="grid gap-2">
-          {revisions.map((rev) => (
-            <div key={rev.id} className="grid grid-cols-[150px_70px_1fr] gap-3 text-xs border-t border-line pt-2">
-              <div className="text-muted">{formatDate(rev.changed_at)}</div>
-              <div className="font-bold text-sub">
-                {rev.rule_id}・{OPERATION_LABEL[rev.operation]}
-              </div>
-              <div className="text-body leading-[1.7]">
-                {rev.table_name === "rules" && rev.snapshot.condition && rev.snapshot.effect
-                  ? `${describeCondition(rev.snapshot.condition)} → ${describeEffect(rev.snapshot.effect, names)}`
-                  : `${rev.table_name === "target_candidates" ? "狙う層の候補" : "訴求の素材"}「${rev.snapshot.label ?? rev.rule_id}」`}
-                {rev.snapshot.enabled ? "" : "（使わない）"}
-                <span className="text-muted">
-                  {" "}
-                  {rev.snapshot.version !== undefined ? `／ 版 ${rev.snapshot.version}` : ""}
-                  {rev.snapshot.updated_by ? `・${rev.snapshot.updated_by}` : ""}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {body}
     </div>
   );
 }

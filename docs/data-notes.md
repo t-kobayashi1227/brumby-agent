@@ -30,6 +30,9 @@ BRUMBY PoCのデータまわり（DB、公開データ、取り込み）の仕�
 | `SUPABASE_URL` | Storageへの生データの保存 |
 | `SUPABASE_SECRET_KEY` | 同上。**すべてのデータを操作できる強いキー**。メンバーとも共有しない |
 | `ANTHROPIC_API_KEY` | AIの文章の生成（`lib/ai/`） |
+| `ANTHROPIC_WORKSPACE_ID` | （任意）workspace に紐づかないAPIキー（`sk-ant-usr…` など）を使うときの workspace の ID（`wrkspc_…`）。あれば `anthropic-workspace-id` ヘッダーで送る |
+| `ANTHROPIC_MODEL` | （任意）AIの文章のモデル。空なら `claude-haiku-5-5`（PoCの開発テスト用の安いモデル）。例：`claude-sonnet-5` |
+| `ANTHROPIC_EFFORT` | （任意）AIが考える深さ。`low`／`medium`／`high`／`xhigh`／`max`。空なら `low` |
 | `BASIC_AUTH_PASSWORD` | Basic認証の共通パスワード（`proxy.ts`、設計書 D5）。未設定だと `next dev` 以外では 503 で止まる |
 | `BASIC_AUTH_USER` | Basic認証のユーザー名（省略時は `brumby`） |
 
@@ -356,7 +359,26 @@ BRUMBY PoCのデータまわり（DB、公開データ、取り込み）の仕�
 - **確かめたこと**：物件1（試しの競合3件）で、平均価格3,880万円・差 −2.6%、建物1㎡あたり356,671円と平均368,019円、土地180.25㎡と平均157.7㎡を、手の計算で確かめた
 - 仮の物件1の競合3件は、プロトタイプの見本（`app/_lib/data.ts` の `compData`）と同じ値。物件1には、見本に合わせて間取り4LDK・駐車場2台・ZEH仕様・最寄り駅 徒歩12分も入れた
 
-### ルール表とルールエンジン（2026-10-04に作成。ルールはすべて仮）
+### 採点ルール表（2026-10-12に、狙う層・訴求・予算・媒体の決め方を置き換え。設計書 D35）
+- 元は BRUMBY様と作った Excel「採点ルール表（初版 v0.26）」（23シート）。Excel は共有資料なので Git に入れない
+- 取り込み：`npm run import-scoring -- "<xlsxのパス>"`（`--dry-run` で件数と注意だけ見る）。同じ ID の行は上書き、Excel にない行は消さない。取り込みも変更履歴に「Excel取り込み」として残る
+  - 読むのは黄色のセル（BRUMBY様が編集する値）だけ。計算式のセルは読まない（計算は `lib/scoring/engine.ts`）
+  - 読み込みは `scripts/scoring/xlsx.ts`（fflate で zip を開き、セルの値だけを読む最小限の読み込み）と `scripts/scoring/parse.ts`
+- 分析の「ルール」の段階で `lib/scoring/run.ts` の `scoreProperty` を呼び、判断カード（`decision.persona_scores`・`decision.target_rank`・`decision.appeals`・`decision.salability`・`decision.total_budget`・`decision.media.*`）を作る
+- 採点に使う値（`lib/scoring/inputs.ts`）：手入力（`properties.manual_metrics`）→ 物件の入力 → 事実カード → 相場表 の順
+  - 駅_m・小学校_m は直線距離（事実カード）。保育園_800m内 は `facility.nursery_count_800m`。子あり世帯比率・高齢者比率は国勢調査の値÷市の値
+  - バス停・スーパー・病院・公園の距離、単身世帯比率、30〜40代の5年変化は**自動で取れない**（OpenStreetMap・国勢調査の追加は次の段階）。手入力がなければ「データなし」
+  - 区・町は物件の入力、空なら住所（新潟市○○区△△）から読む。居室数は空なら間取り（4LDK → 4）から読む
+  - 競合の駅徒歩（分）は「×80÷1.3」で直線距離にそろえる。競合の小学校距離は入力欄がないので比べない
+- **Excel と違うところ**：値が取れない項目は、素点からも満点からも外す（Excel は満点に残すので点が下がる）。層のすべての値がなければ、その層を総合の重みから外す（競合が未入力のときと同じ扱い）。エリア人気で町が見つからないときは、区の中央値を使う（Excel の説明どおり。Excel の式は50点になる）
+- 画面：販売戦略（`/strategy`）の「誰に」に第1〜第3ターゲット、「ターゲットの評価」に全ペルソナの総合点・5層・評価理由（当てはまったルール・適合度・点・根拠区分、素点/満点、データなしの項目、購入可能性の計算、競合との比較）。根拠データのタブに「採点に使った値」。物件を選ぶ前は物件の一覧（写真・住所・価格・第1ターゲット・売れやすさ・広告予算・最終分析日）を出す。BRUMBY様の判断の入力は、PoCで見せるときに邪魔になるため2026-10-12に外した
+- 物件の写真（2026-10-12）：物件の登録・変更の画面の「基本情報」で1枚登録できる（`property_photos`）。なければ共通の仮画像。ホーム・販売戦略の一覧・販売戦略の上部に出す。写真の送信のため `next.config.ts` の `serverActions.bodySizeLimit` を 3mb にした
+- 「BRUMBYに相談する」ボタン（押しても何もしなかった）は、2026-10-12に販売戦略の画面から外した
+- 広告媒体の評価（2026-10-12に表示を追加）：販売戦略の画面に、媒体ごとの届きやすさ・順位・根拠（第1ターゲットの利用率と全年代の利用率、統計がない媒体は一律の値）・反響係数・配分（最初に使う額）・形式の例を出す（Excel の「媒体配分」と試算シート⑧）。判断カード `decision.media.*` の文にも順位と利用率を入れ、AIが媒体を選んだ理由を書けるようにした
+- 設定の画面：`/rules`（タブ：計算の考え方・ペルソナ・採点ルール・項目の重視度・重み・前提・予算・競合重視度・相場・エリア人気・媒体・反響・変更履歴）。旧ルール表は `/rules/legacy`
+- **確かめたこと**（`npm test`、`lib/scoring/engine.test.ts`）：Excel の試算シートのサンプル物件（中央区・新築・3,780万円・4LDK・延床105㎡・競合3件）で、第1〜第3ターゲットが B（小中学生のいる家族 83.1点）・A・F、B の必要年収 約590万円（ターゲット像「世帯年収600万円以上」）・購入可能性67点・競合65点、予算19万円（最初に11.4万円）、配分先が Instagram・YouTube・LINE・ポータル・Google検索広告の5つになることを、手の計算と照らして確かめた。Excel は計算結果を保存していない（式だけ）ため、Excel の値とは直接比べていない。Excel 本体での確認は `SCORING_XLSX=<xlsxのパス> npm test` で動く
+
+### ルール表とルールエンジン（2026-10-04に作成。2026-10-12から使っていない。採点ルール表に置き換え）
 - 分析の流れで、事実カードを作ったあとに、ルールで判断して**判断カード**（`kind = decision`）を足す。実行の段階（`analysis_runs.stage`）は `rules` になる。処理は `lib/rules/engine.ts`
 - 狙う層の候補と媒体の一覧は `lib/rules/catalog.ts`（プロトタイプの `targetList`・`mediaDefs` が出発点）
   - 狙う層：`family`（30〜40代の子育てファミリー）、`dinks`（20代後半〜30代前半の共働き夫婦）、`relocation`（周辺エリアの住み替え層）
@@ -505,6 +527,12 @@ npm run fetch-surroundings -- --property 1
 
 # 地価を範囲を絞って試す（範囲は 西,南,東,北 の経度・緯度）
 npm run ingest -- reinfolib-land-prices --year 2026 --bbox 139.0,37.88,139.1,37.95
+
+# 採点ルール表（Excel）を取り込む（--dry-run で件数と注意だけ見る）
+npm run import-scoring -- "C:/Users/.../採点ルール表_初版.xlsx"
+
+# 採点の計算のテスト（SCORING_XLSX を入れると Excel 本体でも確かめる）
+npm test
 
 # マイグレーションの状況（手元とクラウドの差）
 npx supabase migration list

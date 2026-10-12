@@ -12,16 +12,27 @@ interface Nearest {
 
 /** 物件から近い順に1つ。周りのデータを取った範囲（keep_m）の中だけを探す */
 async function nearest(ctx: AnalyzerContext, apiId: string, withinM: number, filter: (p: Record<string, unknown>) => boolean) {
+  return (await nearestList(ctx, apiId, withinM, filter, 1))[0] ?? null;
+}
+
+/** 物件から近い順に limit 件（画面の「周辺の学校・保育園」の一覧に使う） */
+async function nearestList(ctx: AnalyzerContext, apiId: string, withinM: number, filter: (p: Record<string, unknown>) => boolean, limit: number) {
   const rows = await ctx.sql<Nearest[]>`
     select g.properties, extensions.st_distance(g.geom::extensions.geography, p.geom::extensions.geography) as distance_m
     from geo_features g, properties p
     where p.id = ${ctx.property.id} and g.api_id = ${apiId}
       and extensions.st_dwithin(g.geom::extensions.geography, p.geom::extensions.geography, ${withinM})
     order by g.geom::extensions.geography <-> p.geom::extensions.geography
-    limit 50
+    limit 200
   `;
-  return rows.find((r) => filter(r.properties)) ?? null;
+  return rows.filter((r) => filter(r.properties)).slice(0, limit);
 }
+
+/** 一覧に残す施設の形（名前・種類・距離・徒歩の目安） */
+const listItem = (name: unknown, kind: unknown, distanceM: number) => {
+  const w = walking(distanceM);
+  return { name: String(name ?? "（名前なし）"), kind: kind ? String(kind) : null, straight_m: w.straight_m, walk_min: w.walk_min };
+};
 
 /** 最寄りの学校（小学校・中学校）。休校中（P29_007 = 2）は除く */
 async function nearestSchool(ctx: AnalyzerContext, key: string, schoolClass: string): Promise<FactDraft> {
@@ -30,7 +41,9 @@ async function nearestSchool(ctx: AnalyzerContext, key: string, schoolClass: str
   const scope = { type: "nearest", search_radius_m: record?.keep_m ?? null };
   if (!version || !record || record.status === "failed") return notFetched(key, record, scope);
 
-  const found = await nearest(ctx, "XKT006", record.keep_m, (p) => p.P29_003_name_ja === schoolClass && Number(p.P29_007) !== 2);
+  const isTarget = (p: Record<string, unknown>) => p.P29_003_name_ja === schoolClass && Number(p.P29_007) !== 2;
+  const list = await nearestList(ctx, "XKT006", record.keep_m, isTarget, 3);
+  const found = list[0] ?? null;
   if (!found) {
     return { key, status: "insufficient", scope, basis: { reason: `半径${record.keep_m}m以内に${schoolClass}がありません` }, datasetVersionIds: [version.id], attribution: version.attribution };
   }
@@ -42,7 +55,15 @@ async function nearestSchool(ctx: AnalyzerContext, key: string, schoolClass: str
     valueText: `${name}（直線${w.straight_m}m、徒歩約${w.walk_min}分）`,
     unit: "m",
     scope,
-    basis: { name, address: found.properties.P29_005_ja ?? null, ...w, rule: "直線×1.3、分速80m", note: "最寄りの学校が通う学校（学区）とは限らない" },
+    basis: {
+      name,
+      address: found.properties.P29_005_ja ?? null,
+      ...w,
+      rule: "直線×1.3、分速80m",
+      note: "最寄りの学校が通う学校（学区）とは限らない",
+      // 近い順に3校（画面の「周辺の学校・保育園」）
+      nearby: list.map((r) => listItem(r.properties.P29_004_ja, null, r.distance_m)),
+    },
     status: "ok",
     datasetVersionIds: [version.id],
     attribution: version.attribution,
@@ -75,9 +96,11 @@ async function nearestNursery(ctx: AnalyzerContext): Promise<FactDraft> {
   };
 }
 
-async function nurseryCount(ctx: AnalyzerContext): Promise<FactDraft> {
-  const key = "facility.nursery_count";
-  const radius = ctx.params.facility_radius_m;
+/**
+ * 半径内の保育園・幼稚園等の数。facility.nursery_count は分析の条件の半径（facility_radius_m）、
+ * facility.nursery_count_800m は採点ルール表の「保育園_800m内」に使う固定の800m（設計書 D35）
+ */
+async function nurseryCount(ctx: AnalyzerContext, key = "facility.nursery_count", radius = ctx.params.facility_radius_m): Promise<FactDraft> {
   const version = singleVersion(ctx.versions, "reinfolib/XKT007");
   const record = await fetchRecord(ctx, "XKT007");
   const scope = { type: "radius", meters: radius };
@@ -94,13 +117,18 @@ async function nurseryCount(ctx: AnalyzerContext): Promise<FactDraft> {
     ) k
   `;
   const n = Object.values(row?.kinds ?? {}).reduce((a, b) => a + b, 0);
+  // 半径の中の施設の名前・種類・距離（近い順。画面の「周辺の学校・保育園」に出す）
+  const list = await nearestList(ctx, "XKT007", radius, () => true, 50);
   return {
     key,
     value: n,
     valueText: `半径${radius}m以内に${n}か所`,
     unit: "count",
     scope,
-    basis: { kinds: row?.kinds ?? {} },
+    basis: {
+      kinds: row?.kinds ?? {},
+      facilities: list.map((r) => listItem(r.properties.preSchoolName_ja, r.properties.schoolClassCode_name_ja ?? "保育所等", r.distance_m)),
+    },
     status: "ok",
     datasetVersionIds: [version.id],
     attribution: version.attribution,
@@ -224,6 +252,7 @@ export const facilitiesAnalyzer: Analyzer = {
     await district(ctx, "facility.junior_high_district", "XKT005", "A32_004_ja", "中学校区"),
     await nearestNursery(ctx),
     await nurseryCount(ctx),
+    await nurseryCount(ctx, "facility.nursery_count_800m", 800),
     await nearestStation(ctx),
     await zoning(ctx),
   ],

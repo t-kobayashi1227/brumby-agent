@@ -20,6 +20,7 @@ interface MarketStats { n: number; medianManYen: number | null; q1ManYen: number
 
 export interface ResearchResultClientProps {
   hasRun: boolean;
+  propertyId: number;
   surveyDate: string;
   propertyName: string;
   propertyPriceManYen: number | null;
@@ -41,11 +42,16 @@ function compAvg(competitors: Competitor[], key: "priceManYen" | "landSqm"): num
 }
 
 export default function ResearchResultClient(props: ResearchResultClientProps) {
-  const { hasRun, surveyDate, propertyPriceManYen, competitors, areaStats, market, dealCases, nearby, zoning, hazardNotes, censusSource, mlitSource } = props;
+  const { hasRun, propertyId, surveyDate, propertyPriceManYen, competitors, areaStats, market, dealCases, nearby, zoning, hazardNotes, censusSource, mlitSource } = props;
   const [tab, setTab] = useState("summary");
 
   if (!hasRun) {
-    return <div className={emptyState}>この物件はまだ分析が実行されていません（npm run analyze）。</div>;
+    return (
+      <div className={emptyState}>
+        この物件はまだ分析されていません。
+        <Link href={`/strategy?property=${propertyId}`} className="text-brand underline ml-1">販売戦略の画面で分析する</Link>
+      </div>
+    );
   }
 
   const avgCompPrice = compAvg(competitors, "priceManYen");
@@ -95,7 +101,7 @@ export default function ResearchResultClient(props: ResearchResultClientProps) {
           <SourceNote className="mb-4">
             競合物件の手入力／{mlitSource}
           </SourceNote>
-          <Link href="/strategy" className={btnPrimary}>
+          <Link href={`/strategy?property=${propertyId}`} className={btnPrimary}>
             販売戦略（AIの分析）を見る →
           </Link>
         </div>
@@ -282,8 +288,10 @@ export default function ResearchResultClient(props: ResearchResultClientProps) {
       )}
 
       <div className="flex justify-end gap-2.5 mt-5">
-        <button className={btnSecondary}>レポートを出力する（PDF）</button>
-        <Link href="/strategy" className={btnPrimary}>
+        <Link href={`/report?property=${propertyId}`} className={btnSecondary}>
+          レポートを出力する（PDF）
+        </Link>
+        <Link href={`/strategy?property=${propertyId}`} className={btnPrimary}>
           販売戦略を作成する →
         </Link>
       </div>

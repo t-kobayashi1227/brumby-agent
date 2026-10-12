@@ -14,6 +14,8 @@
   --color-subtle: #f7f9fc;
   --color-accent: #c14b1f;
   --color-chart: #8fb4e0;
+  --color-primary: #2a66c8;
+  --color-primary-soft: #e8f0fb;
 }
 
 @theme inline {

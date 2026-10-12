@@ -5,6 +5,7 @@ import { cardName } from "../../../../lib/rules/describe";
 import { findFact, listProperties, loadReport, mediaBreakdown, targetRanking, type ReportData } from "../../../../lib/report";
 import PropertyPicker from "../../../_components/PropertyPicker";
 import { card, emptyState } from "../../../_lib/ui";
+import { scoringSchemaReady } from "../../../../lib/scoring/schema-check";
 
 // 前回の結果と並べて比べる（設計書 5.2・7章）。条件を変えた再実行や、再現性の確認（同じ条件で3回）に使う
 // ?property=<id>&a=<実行>&b=<実行>。省略時は最新の成功した2回（a＝前回、b＝今回）
@@ -17,6 +18,7 @@ interface RunRow {
   created_at: Date;
   params: Record<string, unknown>;
   rules_version: number | null;
+  scoring_version: number | null;
 }
 
 /** 比べる行：左（a）と右（b）の文字。違えば印を付ける */
@@ -74,9 +76,11 @@ function decisions(r: ReportData) {
   const media = mediaBreakdown(r.facts);
   const rank = findFact(r.facts, "decision.target_rank");
   return {
+    // 採点ルール表（D35）の実行は総合点（100点満点）、古い実行はルールの点の合計/満点
     rank: (rank?.basis as { unresolved?: boolean } | null)?.unresolved
       ? "絞り込めない"
       : ranking.filter((t) => t.rank === 1).map((t) => `${t.label}（${t.score}/${t.max}点）`).join("・") || "—",
+    method: (rank?.basis as { method?: string } | null)?.method === "scoring" ? "採点ルール表" : "旧ルール（点の足し上げ）",
     order: ranking.map((t) => `${t.rank}. ${t.label} ${t.available ? `${t.score}点` : "—"}`).join(" ／ ") || "—",
     appeals: appeals.map((a) => a.label).join("・") || "なし",
     budget: budget && budget.value !== null ? `${budget.value}万円（${source === "input" ? "入力値" : "提案値"}）` : "決まっていない",
@@ -92,7 +96,7 @@ export default async function ComparePage({ searchParams }: PageProps<"/strategy
   const picker = <PropertyPicker properties={properties} current={propertyId} href={(id) => `/strategy/compare?property=${id}`} />;
 
   const runs = await sql<RunRow[]>`
-    select id, created_at, params, rules_version from analysis_runs
+    select id, created_at, params, rules_version, ${(await scoringSchemaReady(sql)) ? sql`scoring_version` : sql`null::bigint as scoring_version`} from analysis_runs
     where property_id = ${propertyId} and status = 'succeeded' order by id desc limit 20
   `;
   if (runs.length < 2) {
@@ -115,12 +119,14 @@ export default async function ComparePage({ searchParams }: PageProps<"/strategy
     { label: "狙う層の年齢", a: pa.age, b: pb.age },
     { label: "絞り込みの基準", a: pa.narrow, b: pb.narrow },
     { label: "ルールの版", a: String(runA.rules_version ?? "—"), b: String(runB.rules_version ?? "—") },
+    { label: "採点ルール表の版", a: String(runA.scoring_version ?? "—"), b: String(runB.scoring_version ?? "—") },
   ];
 
   const da = decisions(A);
   const db = decisions(B);
   const mediaKeys = [...new Set([...Object.keys(da.media), ...Object.keys(db.media)])];
   const decisionRows: Row[] = [
+    { label: "評価の方式", a: da.method, b: db.method },
     { label: "狙う層（1位）", a: da.rank, b: db.rank },
     { label: "狙う層の順位", a: da.order, b: db.order },
     { label: "選んだ訴求", a: da.appeals, b: db.appeals },
