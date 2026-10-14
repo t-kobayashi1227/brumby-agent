@@ -7,7 +7,7 @@ export default function LoginPage() {
       <div className="flex-[1_1_480px] bg-white flex items-center justify-center py-12 px-6">
         <div className="w-full max-w-[360px]">
           <div className="flex items-center justify-center gap-2.5 mb-7">
-            <Image src="/brumby_ロゴのみ.png" alt="BRUMBY" width={132} height={88} className="h-28 w-auto" priority />
+            <Image src="/brumby_logo_mark.png" alt="BRUMBY" width={132} height={88} className="h-28 w-auto" priority />
           </div>
           <div className="text-[22px] font-bold text-ink mb-6 text-center">BRUMBY AI物件販売戦略</div>
 
