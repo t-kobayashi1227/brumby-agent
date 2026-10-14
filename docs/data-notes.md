@@ -256,7 +256,7 @@ BRUMBY PoCのデータまわり（DB、公開データ、取り込み）の仕�
 - 版37（1回目の失敗、0件）は2026-10-12に削除した（Storage の元ファイルも削除）
 
 ### 物件の周りのデータ（不動産情報ライブラリ XKT系、2026-10-04に仕組みを作成）
-- **物件が登録されたときに、その周りを取りに行く**（県全域を先に取らない）。処理は `lib/surroundings/fetch.ts`。物件の画面（`/properties/<番号>`）は、位置が新しくなったら（登録・ピンの保存・住所からの取り直し）自動で1種類ずつ取りに行き、表に進み具合を出す（2026-10-07）。ターミナルで試すときは `npm run fetch-surroundings -- --property <番号>`。Vercel にも `REINFOLIB_API_KEY` が必要
+- **物件が登録されたときに、その周りを取りに行く**（県全域を先に取らない）。処理は `lib/surroundings/fetch.ts`。物件の画面（`/properties/<番号>`）は、位置が新しくなったら（登録・ピンの保存・住所からの取り直し）自動で取りに行き、表に進み具合を出す（2026-10-07）。種類ごとに別の呼び出し（`app/(app)/properties/[id]/surroundings/route.ts`）にし、4種類ずつ同時に取る（2026-10-13。Server Actions は画面から1つずつ順にしか呼ばれないため Route Handler にした）。ターミナルで試すときは `npm run fetch-surroundings -- --property <番号>`。Vercel にも `REINFOLIB_API_KEY` が必要
 - 設計書4.2の `tile_cache`（タイルを丸ごと保存）はやめて、**物件の近くの地物だけを `geo_features` に保存する**形にした。洪水浸水想定はタイル1枚で681〜2,800件・3〜11MBあり、丸ごと保存すると無料枠の容量が足りなくなるため（`tile_cache` はマイグレーションで削除）
 - APIごとに取り方を分けている（`lib/surroundings/layers.ts`）
 

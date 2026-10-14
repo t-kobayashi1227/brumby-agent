@@ -107,7 +107,7 @@ async function propertyPoint(sql: Sql, propertyId: number) {
 
 /**
  * 1種類（1つのAPI）だけ取って保存し、property_fetches に記録する
- * 画面からは、この関数を1種類ずつ別の呼び出しで呼ぶ（1回の呼び出しを短くするため。設計書 D34 と同じ考え方）
+ * 画面からは、この関数を種類ごとに別の呼び出し（app/(app)/properties/[id]/surroundings/route.ts）で同時に呼ぶ（1回の呼び出しを短くするため。設計書 D34 と同じ考え方）
  */
 export async function fetchLayer(sql: Sql, propertyId: number, apiKey: string, layer: Layer, radiusM = DEFAULT_RADIUS_M): Promise<FetchResult> {
   const { lon, lat } = await propertyPoint(sql, propertyId);

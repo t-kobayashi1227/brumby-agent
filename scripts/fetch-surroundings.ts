@@ -1,5 +1,5 @@
 // 物件の周りの公開データ（XKT系）を取る：npm run fetch-surroundings -- --property 1 [--radius 3000] [--apis XKT006,XKT026]
-// 画面では、物件の画面（/properties/<番号>）が位置の保存の後に自動で同じ処理（lib/surroundings/fetch.ts の fetchLayer）を1種類ずつ呼ぶ
+// 画面では、物件の画面（/properties/<番号>）が位置の保存の後に自動で同じ処理（lib/surroundings/fetch.ts の fetchLayer）を種類ごとに同時に呼ぶ
 import { parseArgs } from "node:util";
 import { getSql } from "../lib/db";
 import { fetchSurroundings } from "../lib/surroundings/fetch";

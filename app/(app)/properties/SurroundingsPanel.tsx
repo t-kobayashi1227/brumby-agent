@@ -3,13 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { LAYERS, OSM_SUPERMARKET } from "../../../lib/surroundings/layers";
-import type { SchoolCounts } from "../../../lib/surroundings/fetch";
+import type { FetchResult, SchoolCounts } from "../../../lib/surroundings/fetch";
 import { btnPrimary, btnSecondary, card } from "../../_lib/ui";
-import { fetchSurroundingLayer } from "./actions";
 
 // 物件の周りの公開データ（不動産情報ライブラリ XKT系・OpenStreetMap）を取る
 // 位置が新しくなったら（登録・地図でのピンの保存・住所からの取り直し）、自動で取りに行く
-// 1種類ずつ別の呼び出しで取り、表に進み具合を出す。失敗した種類があっても最後まで進める
+// 1種類ずつ別の呼び出し（properties/[id]/surroundings/route.ts）で取り、表に進み具合を出す。失敗した種類があっても最後まで進める
+// 待ち時間を短くするため、CONCURRENCY 種類ずつ同時に取る（多すぎると不動産情報ライブラリ・DB の接続が混むので上限を置く）
 // 取り直すときは、失敗した種類（と、まだ取っていない種類）だけを取り直せる。「すべて取り直す」で全部をもう一度取る
 
 export interface FetchRow {
@@ -25,8 +25,22 @@ export interface FetchRow {
 /** 市の通学区域から住所で引いた学校。キーは小学校区・中学校区の apiId（国のデータがない新潟市で、表の行に添える） */
 export type CityDistricts = Record<"XKT004" | "XKT005", string>;
 
+const CONCURRENCY = 4;
+
+/** 1種類を取る。HTTP のエラーは例外にする（表の「失敗」に理由を出す） */
+async function fetchSurroundingLayer(propertyId: number, apiId: string): Promise<FetchResult> {
+  const res = await fetch(`/properties/${propertyId}/surroundings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ apiId }),
+  });
+  const body = (await res.json().catch(() => null)) as (FetchResult & { error?: string }) | null;
+  if (!res.ok || !body) throw new Error(body?.error ?? `HTTP ${res.status}`);
+  return body;
+}
+
 const STATUS_LABEL: Record<FetchRow["status"], string> = {
-  ok: "取れた",
+  ok: "取得",
   empty: "データなし",
   failed: "失敗",
   running: "取得中…",
@@ -40,6 +54,9 @@ const STATUS_TONE: Record<FetchRow["status"], string> = {
   running: "text-brand font-bold",
   waiting: "text-muted",
 };
+
+/** 取得日時。物件の画面（properties/[id]/page.tsx）で前回の取得日時を出す書き方とそろえる */
+const formatDate = (d: Date) => d.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 /** 半径で数える種類と、物件の地点で判定する種類で、保存する範囲が違う（lib/surroundings/layers.ts） */
 const rangeOf = (apiId: string) => {
@@ -71,27 +88,24 @@ export default function SurroundingsPanel({ propertyId, hasLocation, autoStart, 
     setDone(null);
     setRows((rs) => rs.map((r) => (targetIds.has(r.apiId) ? { ...r, status: "waiting", error: null } : r)));
     let failed = 0;
-    for (const layer of targets) {
-      update(layer.apiId, { status: "running" });
-      try {
-        const r = await fetchSurroundingLayer(propertyId, layer.apiId);
-        if (layer.apiId === OSM_SUPERMARKET) setSupermarkets(r.status === "failed" ? [] : r.supermarkets ?? []);
-        update(layer.apiId, { status: r.status, featuresKept: r.featuresKept, error: r.error ?? null, fetchedAt: "いま", schoolCounts: r.schoolCounts ?? null });
-        if (r.status === "failed") failed++;
-        setProgress((p) => ({ ...p, done: p.done + 1 }));
-        // APIキーがないときは、残りの XKT 系も同じ理由で失敗する
-        if (r.error?.includes("REINFOLIB_API_KEY")) {
-          const rest = targets.slice(targets.indexOf(layer) + 1).filter((x) => x.apiId.startsWith("XKT")).map((x) => x.apiId);
-          setRows((rs) => rs.map((x) => (rest.includes(x.apiId) ? { ...x, status: "failed", error: r.error ?? null } : x)));
-          failed += rest.length;
-          break;
+    const queue = [...targets];
+    // CONCURRENCY 本の流れが、キューから1種類ずつ取り出して取る
+    const worker = async () => {
+      for (let layer = queue.shift(); layer; layer = queue.shift()) {
+        update(layer.apiId, { status: "running" });
+        try {
+          const r = await fetchSurroundingLayer(propertyId, layer.apiId);
+          if (layer.apiId === OSM_SUPERMARKET) setSupermarkets(r.status === "failed" ? [] : r.supermarkets ?? []);
+          update(layer.apiId, { status: r.status, featuresKept: r.featuresKept, error: r.error ?? null, fetchedAt: formatDate(new Date()), schoolCounts: r.schoolCounts ?? null });
+          if (r.status === "failed") failed++;
+        } catch (e) {
+          failed++;
+          update(layer.apiId, { status: "failed", error: e instanceof Error ? e.message : String(e) });
         }
-      } catch (e) {
-        failed++;
-        update(layer.apiId, { status: "failed", error: e instanceof Error ? e.message : String(e) });
         setProgress((p) => ({ ...p, done: p.done + 1 }));
       }
-    }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
     setRunning(false);
     const scope = only ? `${targets.length}種類を取り直しました` : "周辺の情報を取りました";
     setDone(
@@ -121,7 +135,7 @@ export default function SurroundingsPanel({ propertyId, hasLocation, autoStart, 
           <div className="text-[11px] text-muted mt-0.5">
             {hasLocation
               ? running
-                ? `取得中… ${progress.done}/${progress.total}種類（1種類ずつ取っています。この画面を開いたままにしてください）`
+                ? `取得中… ${progress.done}/${progress.total}種類（この画面を開いたままにしてください）`
                 : "地図の位置を確定すると、周辺のスーパーと公開データを自動で取得します"
               : "位置を指定すると、自動で取りに行きます"}
           </div>

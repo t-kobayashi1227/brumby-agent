@@ -16,7 +16,7 @@ import DeletePropertyButton from "../DeletePropertyButton";
 
 // 物件の画面：登録した内容の変更と、位置（地図のピン）の確認（設計書 7章、D15）
 export const dynamic = "force-dynamic";
-// 周辺の情報は1種類ずつ取る（1回の呼び出しは数秒）。念のための上限（秒）
+// 周辺の情報は種類ごとに別の呼び出し（surroundings/route.ts）で取る。念のための上限（秒）
 export const maxDuration = 60;
 
 interface Row extends Omit<PropertyValues, "land_sqm" | "building_sqm" | "sales_deadline"> {
