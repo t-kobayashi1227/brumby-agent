@@ -16,7 +16,7 @@ interface ResultRow {
   inquiries: number;
 }
 
-const small = "w-full mt-1 px-2 py-[6px] border border-field rounded-md text-[12px] bg-white";
+const small = "w-full mt-1 px-2 py-[6px] border border-field rounded-md text-[12px] bg-white transition-colors focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
 const yen = (n: number) => `${n.toLocaleString("ja-JP")}円`;
 
 export default function MediaResultsPanel({ media, results, properties, minInquiries }: { media: { id: string; label: string; coefficient: number }[]; results: ResultRow[]; properties: { id: number; name: string }[]; minInquiries: number }) {
@@ -31,10 +31,12 @@ export default function MediaResultsPanel({ media, results, properties, minInqui
   });
 
   return (
-    <div className={`${card} p-5 grid gap-5`}>
-      <div>
+    <div className={`${card} overflow-hidden`}>
+      <div className="px-5 py-3.5 border-b border-line bg-subtle">
         <div className="text-[13px] font-bold text-ink">反響の集計</div>
-        <div className="text-[11px] text-muted mt-1 mb-3">問い合わせが{minInquiries}件に満たない媒体の反響係数は1.00です。係数が大きい媒体ほど、配分が増えます。</div>
+        <div className="text-[11px] text-muted mt-1 leading-[1.7]">問い合わせが{minInquiries}件に満たない媒体の反響係数は1.00です。係数が大きい媒体ほど、配分が増えます。</div>
+      </div>
+      <div className="px-5 pt-3">
         <div className={`${tableHead} grid-cols-[1.4fr_1fr_0.7fr_1fr_0.7fr] text-[11px] text-muted`}>
           <div>媒体</div>
           <div>費用計</div>
@@ -48,18 +50,18 @@ export default function MediaResultsPanel({ media, results, properties, minInqui
             <div>{yen(t.cost)}</div>
             <div>{t.inq}</div>
             <div>{t.cpi === null ? "—" : yen(t.cpi)}</div>
-            <div className="font-bold">{t.coefficient.toFixed(2)}</div>
+            <div className="font-bold text-ink">{t.coefficient.toFixed(2)}</div>
           </div>
         ))}
       </div>
 
-      <div>
+      <div className="px-5 py-4 mt-2 border-t border-line">
         <div className="text-[13px] font-bold text-ink mb-3">反響の記録</div>
         {results.length === 0 && <div className="text-xs text-muted mb-3">まだ記録がありません。</div>}
         {results.map((r) => (
           <div key={r.id} className="flex flex-wrap gap-x-3 items-center py-1.5 border-b border-divider text-xs text-body">
             <span className="text-muted">{r.started_on ?? "—"}</span>
-            <span className="font-bold">{label(r.media_id)}</span>
+            <span className="font-bold text-ink">{label(r.media_id)}</span>
             <span>{r.property_id !== null ? `物件${r.property_id}` : ""}</span>
             <span>{yen(r.cost_yen)}</span>
             <span>問い合わせ{r.inquiries}</span>
@@ -69,7 +71,7 @@ export default function MediaResultsPanel({ media, results, properties, minInqui
               onClick={() => {
                 if (window.confirm("この記録を削除します。よろしいですか？")) startDelete(async () => void (await deleteMediaResult(r.id)));
               }}
-              className="ml-auto text-[#b91c1c] cursor-pointer"
+              className="ml-auto px-2 py-1 rounded-md text-[#b91c1c] cursor-pointer transition-colors hover:bg-[#fdecec] focus-visible:outline-2 focus-visible:outline-[#b91c1c]/40 disabled:opacity-60 disabled:cursor-default"
             >
               削除
             </button>
@@ -117,12 +119,16 @@ export default function MediaResultsPanel({ media, results, properties, minInqui
             問い合わせ数
             <input name="inquiries" inputMode="numeric" className={small} />
           </label>
-          <div className="col-span-full flex items-center gap-3">
-            <button type="submit" disabled={pending} className="px-4 py-2 bg-brand rounded-md text-white text-xs font-bold cursor-pointer disabled:opacity-60">
+          <div className="col-span-full flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              disabled={pending}
+              className="px-4 py-2 bg-brand rounded-md text-white text-xs font-bold cursor-pointer transition-colors hover:bg-brand/90 focus-visible:outline-2 focus-visible:outline-brand/50 disabled:opacity-60 disabled:cursor-default"
+            >
               {pending ? "保存中…" : "記録を追加する"}
             </button>
-            {state.ok && <span className="text-xs text-[#157347]">{state.ok}</span>}
-            {state.error && <span className="text-xs text-[#b91c1c]">{state.error}</span>}
+            {state.ok && <span className="px-2.5 py-1 rounded-md bg-[#e9f8ec] text-[#157347] text-xs">{state.ok}</span>}
+            {state.error && <span className="px-2.5 py-1 rounded-md bg-[#fdecec] text-[#b91c1c] text-xs">{state.error}</span>}
           </div>
         </form>
       </div>

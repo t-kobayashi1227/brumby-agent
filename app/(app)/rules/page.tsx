@@ -33,6 +33,27 @@ type Row = Record<string, unknown>;
 const fmt = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v));
 const formatDate = (d: Date) => new Date(d).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 
+/** details/summary の開閉を示す三角（既定のマーカーは消して差し替える） */
+function Chevron() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="w-3.5 h-3.5 shrink-0 text-muted transition-transform duration-200 group-open:rotate-90" aria-hidden="true">
+      <path d="M7 5l5 5-5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+const OP_STYLE: Record<string, string> = {
+  insert: "bg-[#dcf5df] text-[#157347]",
+  delete: "bg-[#fde2e1] text-[#b91c1c]",
+  update: "bg-divider text-sub",
+};
+const OP_LABEL: Record<string, string> = { insert: "追加", delete: "削除", update: "変更" };
+
+/** 変更履歴の「追加／変更／削除」バッジ */
+function OpBadge({ op }: { op: string }) {
+  return <span className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-bold ${OP_STYLE[op] ?? OP_STYLE.update}`}>{OP_LABEL[op] ?? op}</span>;
+}
+
 /** 一覧の1行の見出し（開くとフォーム） */
 function summaryOf(table: string, r: Row): React.ReactNode {
   switch (table) {
@@ -75,11 +96,11 @@ function summaryOf(table: string, r: Row): React.ReactNode {
         <>
           <b className="mr-2">{ITEM_LABEL[String(r.key)] ?? fmt(r.label ?? r.key)}</b>
           <span className="text-muted mr-2">{fmt(r.key)}</span>
-          <span className="font-mono text-[11px]">
+          <span className="font-mono text-[14px]">
             {Object.entries(imp)
               .sort()
               .map(([k, v]) => `${k}:${v}`)
-              .join(" ")}
+              .join("  ")}
           </span>
         </>
       );
@@ -137,58 +158,87 @@ async function TableEditor({ def, personaIds, where }: { def: TableDef; personaI
     select * from ${sql(def.table)} ${where ? sql`where ward = ${where.ward}` : sql``} order by ${sql.unsafe(def.orderBy)}
   `;
   return (
-    <div className={`${card} p-5`}>
-      <div className="text-[13px] font-bold text-ink">{def.label}</div>
-      <div className="text-[11px] text-muted mt-1 mb-3 leading-[1.7]">
-        {def.note}（Excel：{def.sheet}）
+    <div className={`${card} overflow-hidden`}>
+      <div className="px-5 py-3.5 border-b border-line bg-subtle">
+        <div className="text-[13px] font-bold text-ink">{def.label}</div>
+        <div className="text-[11px] text-muted mt-1 leading-[1.7]">
+          {def.note}（Excel：{def.sheet}）
+        </div>
       </div>
-      {rows.length === 0 && <div className="text-xs text-muted py-3">行がありません。npm run import-scoring で Excel を{def.canAdd ? "取り込むか、下の「行を追加」で入れて" : "取り込んで"}ください。</div>}
-      {rows.map((r) => (
-        <details key={def.fields.filter((f) => f.pk).map((f) => String(r[f.name])).join("/")} className="border-t border-line">
-          <summary className="py-2.5 text-[13px] text-body cursor-pointer select-none">{summaryOf(def.table, r)}</summary>
-          <div className="pb-4">
-            <ScoringRowForm def={def} values={r} personaIds={personaIds} mode="update" />
-            {r.updated_at instanceof Date && (
-              <div className="text-[10px] text-muted mt-2">
-                最終更新 {formatDate(r.updated_at)}
-                {r.updated_by ? `（${String(r.updated_by)}）` : ""}
-              </div>
-            )}
-          </div>
-        </details>
-      ))}
-      {def.canAdd && (
-        <details className="border-t border-line">
-          <summary className="py-2.5 text-xs text-brand font-bold cursor-pointer select-none">＋ 行を追加</summary>
-          <div className="pb-4">
-            <ScoringRowForm def={def} values={where ? { ward: where.ward } : {}} personaIds={personaIds} mode="insert" />
-          </div>
-        </details>
-      )}
+      <div className="px-5">
+        {rows.length === 0 && <div className="text-xs text-muted py-4">行がありません。npm run import-scoring で Excel を{def.canAdd ? "取り込むか、下の「行を追加」で入れて" : "取り込んで"}ください。</div>}
+        {rows.map((r) => (
+          <details key={def.fields.filter((f) => f.pk).map((f) => String(r[f.name])).join("/")} className="group border-t border-line first:border-t-0">
+            <summary className="flex items-start gap-2 py-3 -mx-2 px-2 rounded-md text-[13px] text-body cursor-pointer select-none transition-colors hover:bg-subtle focus-visible:outline-2 focus-visible:outline-brand/50 [&::-webkit-details-marker]:hidden list-none">
+              <span className="mt-0.5"><Chevron /></span>
+              <span className="min-w-0 flex-1">{summaryOf(def.table, r)}</span>
+            </summary>
+            <div className="pb-4 pl-[22px]">
+              <ScoringRowForm def={def} values={r} personaIds={personaIds} mode="update" />
+              {r.updated_at instanceof Date && (
+                <div className="text-[10px] text-muted mt-2">
+                  最終更新 {formatDate(r.updated_at)}
+                  {r.updated_by ? `（${String(r.updated_by)}）` : ""}
+                </div>
+              )}
+            </div>
+          </details>
+        ))}
+        {def.canAdd && (
+          <details className="group border-t border-line">
+            <summary className="flex items-center gap-2 py-3 -mx-2 px-2 rounded-md text-xs text-brand font-bold cursor-pointer select-none transition-colors hover:bg-subtle focus-visible:outline-2 focus-visible:outline-brand/50 [&::-webkit-details-marker]:hidden list-none">
+              <span className="w-3.5 h-3.5 shrink-0 text-center leading-none">＋</span>
+              行を追加
+            </summary>
+            <div className="pb-4 pl-[22px]">
+              <ScoringRowForm def={def} values={where ? { ward: where.ward } : {}} personaIds={personaIds} mode="insert" />
+            </div>
+          </details>
+        )}
+      </div>
     </div>
   );
 }
 
+const OVERVIEW_STEPS: { title: string; body: React.ReactNode }[] = [
+  { title: "5つの層を採点", body: "ペルソナごとに、5つの層（物件・購入可能性・生活環境・市場・競合）を0〜100点で採点します。" },
+  {
+    title: "物件・生活環境・市場",
+    body: (
+      <>
+        当てはまったルールの点（適合度 ◎+2〜×−2 × 項目の重視度 × 1段階の点数）を足した「素点」を、取りうる最大の点「満点」で割ります。
+        <span className="text-muted">値が取れない項目は、素点からも満点からも外し、画面に「データなし」と出します。</span>
+      </>
+    ),
+  },
+  { title: "購入可能性", body: "ローン返済から逆算した必要年収を、そのペルソナの世帯の何%が上回るかで採点します（現金で買うペルソナは、今の家の売却見込み＋貯蓄で判定）。「世帯年収○○万円以上」というターゲット像も出します。" },
+  { title: "競合", body: "項目ごとの勝ち負けを、ペルソナの重視度で重み付けします。競合が未入力なら、この層を外して残りで計算します。" },
+  { title: "総合点とターゲット", body: "総合＝5つの層×層の重み（85%）＋ 統計上の買い手の多さ（15%）。上位3つが第1〜第3ターゲットです。" },
+  { title: "訴求ポイント", body: "競合（なければ同じ区・築年数区分の取引の中央値）と比べて勝つ項目×第1ターゲットの重視度。" },
+  { title: "予算", body: "売れやすさ（エリア人気・価格の相場比・第1ターゲットの適合度）で倍率を決め、物件価格×基準率に掛けます。最初に一部を使い、反響が少なければ追加します。" },
+  { title: "媒体", body: "第1ターゲットへの届きやすさ（年代別の利用率）× 反響係数（反響の記録）の上位の媒体に配分します。" },
+];
+
 function Overview() {
   return (
-    <div className={`${card} p-5.5 text-[13px] text-body leading-[1.9]`}>
-      <div className="text-base font-extrabold text-ink mb-2">物件の評価のしかた（採点ルール表）</div>
-      <ol className="grid gap-1.5 list-decimal pl-5">
-        <li>ペルソナごとに、5つの層（物件・購入可能性・生活環境・市場・競合）を0〜100点で採点します。</li>
-        <li>
-          物件・生活環境・市場：当てはまったルールの点（適合度 ◎+2〜×−2 × 項目の重視度 × 1段階の点数）を足した「素点」を、取りうる最大の点「満点」で割ります。
-          <span className="text-muted">値が取れない項目は、素点からも満点からも外し、画面に「データなし」と出します。</span>
-        </li>
-        <li>購入可能性：ローン返済から逆算した必要年収を、そのペルソナの世帯の何%が上回るかで採点します（現金で買うペルソナは、今の家の売却見込み＋貯蓄で判定）。「世帯年収○○万円以上」というターゲット像も出します。</li>
-        <li>競合：項目ごとの勝ち負けを、ペルソナの重視度で重み付けします。競合が未入力なら、この層を外して残りで計算します。</li>
-        <li>総合＝5つの層×層の重み（85%）＋ 統計上の買い手の多さ（15%）。上位3つが第1〜第3ターゲットです。</li>
-        <li>訴求ポイント：競合（なければ同じ区・築年数区分の取引の中央値）と比べて勝つ項目×第1ターゲットの重視度。</li>
-        <li>予算：売れやすさ（エリア人気・価格の相場比・第1ターゲットの適合度）で倍率を決め、物件価格×基準率に掛けます。最初に一部を使い、反響が少なければ追加します。</li>
-        <li>媒体：第1ターゲットへの届きやすさ（年代別の利用率）× 反響係数（反響の記録）の上位の媒体に配分します。</li>
+    <div className={`${card} overflow-hidden`}>
+      <div className="px-5.5 py-4 border-b border-line bg-subtle">
+        <div className="text-base font-extrabold text-ink">物件の評価のしかた（採点ルール表）</div>
+      </div>
+      <ol className="px-5.5 py-4 grid gap-3.5">
+        {OVERVIEW_STEPS.map((s, i) => (
+          <li key={s.title} className="flex gap-3">
+            <span className="shrink-0 w-6 h-6 rounded-full bg-primary-soft text-primary text-[11px] font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+            <div className="text-[13px] text-body leading-[1.8]">
+              <span className="font-bold text-ink mr-1.5">{s.title}</span>
+              {s.body}
+            </div>
+          </li>
+        ))}
       </ol>
-      <div className="mt-3 text-xs text-muted">
+      <div className="px-5.5 py-3.5 border-t border-line text-xs text-muted leading-[1.8]">
         表を直すと、次の分析から使います（前の分析の結果は変わりません。販売戦略の「前回の結果と比べる」で、版ごとの違いを確かめられます）。前の方式のルール表は
-        <Link href="/rules/legacy" className="text-brand underline mx-1">こちら</Link>
+        <Link href="/rules/legacy" className="text-brand underline mx-1 hover:text-brand/80">こちら</Link>
         に残しています。
       </div>
     </div>
@@ -210,31 +260,33 @@ async function History() {
       .join("　");
   };
   return (
-    <div className={`${card} p-5`}>
-      <div className="text-[13px] font-bold text-ink mb-3">変更履歴（新しい順・200件まで）</div>
-      {rows.length === 0 && <div className="text-xs text-muted">まだ変更はありません。</div>}
-      {rows.map((r) => (
-        <div key={r.id} className="border-t border-line py-2.5 text-xs text-body">
-          <div className="flex flex-wrap gap-x-3">
-            <span className="text-muted">{formatDate(r.changed_at)}</span>
-            <span className="font-bold">
-              {label(r.table_name)}・{r.row_key}
-            </span>
-            <span>{r.operation === "insert" ? "追加" : r.operation === "delete" ? "削除" : "変更"}</span>
-            {r.changed_by && <span className="text-muted">（{r.changed_by}）</span>}
-            {r.related_property && <span className="text-muted">関連物件：{r.related_property}</span>}
-            <span className="text-muted">版 {r.id}</span>
-          </div>
-          {r.reason && <div className="mt-0.5">理由：{r.reason}</div>}
-          {r.table_name === "excel" ? (
-            <div className="mt-0.5 text-muted">
-              {fmt((r.before as { value?: unknown } | null)?.value)} → {fmt((r.after as { value?: unknown } | null)?.value)}
+    <div className={`${card} overflow-hidden`}>
+      <div className="px-5 py-3.5 border-b border-line bg-subtle text-[13px] font-bold text-ink">変更履歴（新しい順・200件まで）</div>
+      <div className="px-5">
+        {rows.length === 0 && <div className="text-xs text-muted py-4">まだ変更はありません。</div>}
+        {rows.map((r) => (
+          <div key={r.id} className="border-t border-line first:border-t-0 py-3 text-xs text-body">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <OpBadge op={r.operation} />
+              <span className="font-bold text-ink">
+                {label(r.table_name)}・{r.row_key}
+              </span>
+              <span className="text-muted">{formatDate(r.changed_at)}</span>
+              {r.changed_by && <span className="text-muted">（{r.changed_by}）</span>}
+              {r.related_property && <span className="text-muted">関連物件：{r.related_property}</span>}
+              <span className="ml-auto text-muted">版 {r.id}</span>
             </div>
-          ) : (
-            r.operation === "update" && <div className="mt-0.5 text-muted break-all">{diff(r.before, r.after)}</div>
-          )}
-        </div>
-      ))}
+            {r.reason && <div className="mt-1.5 leading-[1.7]">理由：{r.reason}</div>}
+            {r.table_name === "excel" ? (
+              <div className="mt-1 text-muted leading-[1.7]">
+                {fmt((r.before as { value?: unknown } | null)?.value)} → {fmt((r.after as { value?: unknown } | null)?.value)}
+              </div>
+            ) : (
+              r.operation === "update" && <div className="mt-1 text-muted break-all leading-[1.7]">{diff(r.before, r.after)}</div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -284,7 +336,11 @@ export default async function ScoringRulesPage({ searchParams }: { searchParams:
       <div className="grid gap-3">
         <div className="flex flex-wrap gap-1.5">
           {wards.map((w) => (
-            <Link key={w.ward} href={`/rules?tab=area_popularity&ward=${encodeURIComponent(w.ward)}`} className={`px-3 py-1 rounded-full text-xs ${w.ward === ward ? "bg-brand text-white font-bold" : "bg-white border border-field text-body"}`}>
+            <Link
+              key={w.ward}
+              href={`/rules?tab=area_popularity&ward=${encodeURIComponent(w.ward)}`}
+              className={`px-3 py-1 rounded-full text-xs transition-colors ${w.ward === ward ? "bg-brand text-white font-bold" : "bg-white border border-field text-body hover:border-brand hover:text-brand"}`}
+            >
               {w.ward}（{w.n}）
             </Link>
           ))}
@@ -298,12 +354,19 @@ export default async function ScoringRulesPage({ searchParams }: { searchParams:
     <div className="grid gap-4">
       <div className="flex flex-wrap items-baseline gap-3">
         <div className="text-base font-extrabold text-ink">採点ルール表</div>
-        <div className="text-xs text-muted">設定の版 {version?.v ?? "—"}（直すたびに増えます）</div>
+        <span className="px-2 py-0.5 rounded-full bg-primary-soft text-primary text-[11px] font-bold">設定の版 {version?.v ?? "—"}</span>
+        <div className="text-xs text-muted">（直すたびに増えます）</div>
       </div>
       {personas.length === 0 && <div className={emptyState}>採点ルール表がまだ取り込まれていません。npm run import-scoring -- &quot;採点ルール表.xlsx のパス&quot; で取り込んでください。</div>}
-      <div className="flex flex-wrap gap-1 border-b border-line">
+      <div className="flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map((t) => (
-          <Link key={t.key} href={`/rules?tab=${t.key}`} className={`px-3.5 py-2 text-[13px] -mb-px border-b-2 ${t.key === tab ? "border-brand text-brand font-bold" : "border-transparent text-body"}`}>
+          <Link
+            key={t.key}
+            href={`/rules?tab=${t.key}`}
+            className={`shrink-0 whitespace-nowrap px-4 py-2.5 text-[13px] -mb-px border-b-2 rounded-t-md transition-colors ${
+              t.key === tab ? "border-brand text-brand font-bold bg-subtle" : "border-transparent text-body hover:text-ink hover:bg-divider"
+            }`}
+          >
             {t.label}
           </Link>
         ))}

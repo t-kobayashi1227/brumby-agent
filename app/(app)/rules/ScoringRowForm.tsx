@@ -10,7 +10,7 @@ import { deleteScoringRow, saveScoringRow, type ScoringFormState } from "./scori
 
 type Values = Record<string, unknown>;
 
-const small = "w-full mt-1 px-2 py-[6px] border border-field rounded-md text-[12px] bg-white";
+const small = "w-full mt-1 px-2 py-[6px] border border-field rounded-md text-[12px] bg-white transition-colors focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
 const str = (v: unknown) => (v === null || v === undefined ? "" : typeof v === "object" ? "" : String(v));
 
 function Field({ f, value, personaIds, editablePk }: { f: FieldDef; value: unknown; personaIds: string[]; editablePk: boolean }) {
@@ -145,12 +145,16 @@ export function ScoringRowForm({ def, values, personaIds, mode }: { def: TableDe
         {def.fields.filter((f) => mode === "insert" || !f.adminOnly).map((f) => (
           <Field key={f.name} f={f} value={values[f.name]} personaIds={personaIds} editablePk={mode === "insert"} />
         ))}
-        <div className="col-span-full flex items-center gap-3">
-          <button type="submit" disabled={pending} className="px-4 py-2 bg-brand rounded-md text-white text-xs font-bold cursor-pointer disabled:opacity-60">
+        <div className="col-span-full flex flex-wrap items-center gap-3">
+          <button
+            type="submit"
+            disabled={pending}
+            className="px-4 py-2 bg-brand rounded-md text-white text-xs font-bold cursor-pointer transition-colors hover:bg-brand/90 focus-visible:outline-2 focus-visible:outline-brand/50 disabled:opacity-60 disabled:cursor-default"
+          >
             {pending ? "保存中…" : mode === "insert" ? "追加する" : "保存する"}
           </button>
-          {state.ok && <span className="text-xs text-[#157347]">{state.ok}</span>}
-          {state.error && <span className="text-xs text-[#b91c1c]">{state.error}</span>}
+          {state.ok && <span className="px-2.5 py-1 rounded-md bg-[#e9f8ec] text-[#157347] text-xs">{state.ok}</span>}
+          {state.error && <span className="px-2.5 py-1 rounded-md bg-[#fdecec] text-[#b91c1c] text-xs">{state.error}</span>}
         </div>
       </form>
       {mode === "update" && def.canDelete && (
@@ -161,17 +165,21 @@ export function ScoringRowForm({ def, values, personaIds, mode }: { def: TableDe
             const data = new FormData(e.currentTarget);
             startTransition(() => delAction(data));
           }}
-          className="flex items-center gap-2"
+          className="flex flex-wrap items-center gap-2"
         >
           <input type="hidden" name="__table" value={def.table} />
           {pks.map((f) => (
             <input key={f.name} type="hidden" name={`__pk.${f.name}`} value={str(values[f.name])} />
           ))}
-          <button type="submit" disabled={deleting} className="px-3 py-1 rounded-md border border-[#f3c4c4] text-[#b91c1c] text-xs cursor-pointer">
+          <button
+            type="submit"
+            disabled={deleting}
+            className="px-3 py-1 rounded-md border border-[#f3c4c4] text-[#b91c1c] text-xs cursor-pointer transition-colors hover:bg-[#fdecec] focus-visible:outline-2 focus-visible:outline-[#b91c1c]/40 disabled:opacity-60 disabled:cursor-default"
+          >
             削除
           </button>
-          {delState.error && <span className="text-xs text-[#b91c1c]">{delState.error}</span>}
-          {delState.ok && <span className="text-xs text-[#157347]">{delState.ok}</span>}
+          {delState.error && <span className="px-2.5 py-1 rounded-md bg-[#fdecec] text-[#b91c1c] text-xs">{delState.error}</span>}
+          {delState.ok && <span className="px-2.5 py-1 rounded-md bg-[#e9f8ec] text-[#157347] text-xs">{delState.ok}</span>}
         </form>
       )}
     </div>
