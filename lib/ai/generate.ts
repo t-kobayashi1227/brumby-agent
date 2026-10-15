@@ -33,7 +33,7 @@ const EFFORT: (typeof EFFORTS)[number] = (EFFORTS as readonly string[]).includes
  */
 function createClient(): Anthropic {
   const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
-  return new Anthropic(workspaceId ? { defaultHeaders: { "anthropic-workspace-id": workspaceId } } : {});
+  return new Anthropic({ maxRetries: 2, ...(workspaceId ? { defaultHeaders: { "anthropic-workspace-id": workspaceId } } : {}) });
 }
 
 export interface GenerateResult {
@@ -123,16 +123,13 @@ function extractParsed(message: ParsedMessage<NarrativeContent>): NarrativeConte
   return message.parsed_output;
 }
 
-/** APIの取得に失敗したら、間隔を空けて数回やり直す（設計書8） */
-async function callClaude(client: Anthropic, outputFormat: AutoParseableOutputFormat<NarrativeContent>, messages: Anthropic.Messages.MessageParam[], retries = 2): Promise<ParsedMessage<NarrativeContent>> {
-  for (let i = 0; ; i++) {
-    try {
-      return await client.messages.parse({ model: MODEL, max_tokens: MAX_TOKENS, system: SYSTEM_PROMPT, messages, output_config: { effort: EFFORT, format: outputFormat } });
-    } catch (error) {
-      if (i >= retries) throw error;
-      await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
-    }
-  }
+/**
+ * APIの取得に失敗したら、間隔を空けて数回やり直す（設計書8）
+ * やり直しは SDK に任せる（createClient の maxRetries）。混雑・通信の失敗（429・5xx など）だけをやり直し、
+ * 400・認証の失敗のように、やり直しても変わらないものはすぐ返す
+ */
+async function callClaude(client: Anthropic, outputFormat: AutoParseableOutputFormat<NarrativeContent>, messages: Anthropic.Messages.MessageParam[]): Promise<ParsedMessage<NarrativeContent>> {
+  return client.messages.parse({ model: MODEL, max_tokens: MAX_TOKENS, system: SYSTEM_PROMPT, messages, output_config: { effort: EFFORT, format: outputFormat } });
 }
 
 interface Usage {

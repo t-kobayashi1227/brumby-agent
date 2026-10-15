@@ -68,7 +68,8 @@ function tilesAround(lon: number, lat: number, meters: number, z: number) {
 async function fetchTile(apiKey: string, layer: Layer, x: number, y: number): Promise<Feature[]> {
   const url = `${ENDPOINT}/${layer.apiId}?response_format=geojson&z=${layer.zoom}&x=${x}&y=${y}`;
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, { headers: { "Ocp-Apim-Subscription-Key": apiKey } });
+    // 応答が止まったまま Route の上限（60秒）に達すると、取得結果の記録も残らないので、1枚ごとに時間を区切る
+    const res = await fetch(url, { headers: { "Ocp-Apim-Subscription-Key": apiKey }, signal: AbortSignal.timeout(15_000), cache: "no-store" });
     if (res.status === 404) return [];
     if (res.ok) {
       const body = (await res.json()) as { features?: Feature[] };

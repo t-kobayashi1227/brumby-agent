@@ -484,7 +484,7 @@ where p.id = 1;
 | `dataset_version_ids` | bigint[] | 必須 | 使った公開データの版 | `{4,7,13,22}` |
 | `rules_version` | bigint | | 使ったルールの版（その時点の `rule_revisions.id` の最大）。旧ルール表 | |
 | `scoring_version` | bigint | | 使った採点ルール表の版（その時点の `scoring_revisions.id` の最大。設計書D35） | |
-| `status` | text | 必須 | `running`（実行中）／`succeeded`（成功）／`failed`（失敗） | |
+| `status` | text | 必須 | `running`（実行中）／`succeeded`（成功）／`failed`（失敗）。`running` は1物件につき1つまで（索引 `analysis_runs_one_running`。ボタンの連打で二重に動かさない） | |
 | `stage` | text | | 次に進める段階。`analyze`（集計）→ `rules`（ルール）→ `ai`（AI）→ `verify`（検証）。段階ごとに別の呼び出しで進める（設計書D34） | |
 | `stage_started_at` | timestamptz | | いまの段階を進めている印（空なら誰も進めていない）。10分たっても空にならなければ、止まったものとして取り直せる | |
 | `error` | text | | 失敗したときの理由 | |

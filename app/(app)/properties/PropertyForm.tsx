@@ -6,6 +6,7 @@ import { ITEM_LABEL, MANUAL_METRIC_KEYS } from "../../../lib/scoring/constants";
 import { card, fieldLabel, input, btnPrimary } from "../../_lib/ui";
 import { saveProperty, type PropertyFormState } from "./actions";
 import PhotoField, { type PhotoChange } from "./PhotoField";
+import CompetitorFields, { type CompetitorValues } from "../../_components/CompetitorFields";
 
 // 物件の登録・変更のフォーム（設計書 7章、D15）
 // 総予算は入力があればそれを使い、空ならルール表の提案値を使う（判断カードに「入力値／提案値」を残す）
@@ -82,7 +83,7 @@ function Section({ title, note, children }: { title: string; note?: string; chil
   );
 }
 
-export default function PropertyForm({ values = EMPTY }: { values?: PropertyValues }) {
+export default function PropertyForm({ values = EMPTY, competitors = [] }: { values?: PropertyValues; competitors?: CompetitorValues[] }) {
   const [state, formAction, pending] = useActionState<PropertyFormState, FormData>(saveProperty, {});
   const v = values;
   // 写真は縮めたものを送信のときに入れる（元の大きな写真は送らない）
@@ -238,6 +239,13 @@ export default function PropertyForm({ values = EMPTY }: { values?: PropertyValu
             </datalist>
           </label>
         </div>
+      </Section>
+
+      <Section
+        title="競合物件（任意・最大3件）"
+        note="価格・間取りなどの条件と、自分の言葉で書いた特徴だけを入力します（ポータルサイトの写真や文章は転載しません）。空の枠は保存しません。あとから「競合物件リサーチ」の画面でも入力・変更できます"
+      >
+        <CompetitorFields competitors={competitors} />
       </Section>
 
       <div className="flex items-center justify-end gap-3">

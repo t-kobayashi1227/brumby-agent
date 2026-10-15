@@ -10,6 +10,7 @@ import { MAX_PHOTO_BYTES, PHOTO_TYPES, photosReady } from "../../../lib/photos";
 import type { Sql } from "../../../lib/db";
 import { SCORING_PROPERTY_COLUMNS, scoringSchemaReady } from "../../../lib/scoring/schema-check";
 import { OSM_SUPERMARKET } from "../../../lib/surroundings/layers";
+import { readCompetitors, writeCompetitors } from "../../../lib/competitors";
 
 // 物件の登録・変更（設計書 7章 /properties/new、D15）
 // 保存すると住所から緯度経度を取る。取れなかったとき・ずれていたときは、地図でピンを置き直す（setLocation）
@@ -164,15 +165,23 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
   try {
     const sql = getSql();
     const form = readForm(formData);
+    // 競合物件の欄も、物件を保存する前に確かめる（誤りがあれば何も保存しない）
+    const competitors = readCompetitors(formData);
     // 採点ルール表（D35）の列は、マイグレーションが入る前は保存しない
     const v: Record<string, unknown> = { ...form, manual_metrics: sql.json(form.manual_metrics) };
-    if (!(await scoringSchemaReady(sql))) for (const c of SCORING_PROPERTY_COLUMNS) delete v[c];
+    const scoringReady = await scoringSchemaReady(sql);
+    if (!scoringReady) for (const c of SCORING_PROPERTY_COLUMNS) delete v[c];
     const id = Number(text(formData, "id") ?? 0);
 
     if (id > 0) {
       const [before] = await sql<{ address: string; geocode_source: string | null }[]>`select address, geocode_source from properties where id = ${id}`;
       if (!before) throw new Error(`物件 ${id} がありません`);
-      await sql`update properties set ${sql(v)} where id = ${id}`;
+      await sql.begin(async (tx) => {
+        await tx`update properties set ${tx(v)} where id = ${id}`;
+        await writeCompetitors(tx, id, competitors, scoringReady);
+      });
+      revalidatePath("/research/detail");
+      revalidatePath("/research/result");
       const photoWarning = await savePhoto(sql, id, formData);
       // 住所を変えたら位置を取り直す。地図で置いたピン（manual）も、住所が変わったら取り直す
       const warning = before.address !== form.address ? await geocodeAndStore(id, form.address) : null;
@@ -181,8 +190,11 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
       return { ok: before.address !== form.address ? "保存しました。住所が変わったので、位置を取り直しました。地図のピンを確かめてください。" : "保存しました。" };
     }
 
-    const [row] = await sql<{ id: number }[]>`insert into properties ${sql(v)} returning id`;
-    createdId = Number(row.id);
+    createdId = await sql.begin(async (tx) => {
+      const [row] = await tx<{ id: number }[]>`insert into properties ${tx(v)} returning id`;
+      await writeCompetitors(tx, Number(row.id), competitors, scoringReady);
+      return Number(row.id);
+    });
     // 写真が保存できなくても（マイグレーション前など）、物件の登録は済ませて物件の画面へ進む
     await savePhoto(sql, createdId, formData).catch(() => null);
     geocodeWarning = await geocodeAndStore(createdId, form.address);

@@ -79,16 +79,20 @@ export async function fetchSupermarkets(sql: Sql, propertyId: number, radiusM = 
       returning id
     `;
     // 物件ごとの取得結果を入れ替え、移転・閉店した店舗が残らないようにする。
-    await sql`delete from geo_features where api_id = ${OSM_SUPERMARKET} and feature_id like ${`${propertyId}:%`}`;
-    for (const item of supermarkets) {
-      await sql`
+    // 消してから入れ直すまでを1つのトランザクションにし、途中で失敗しても前の結果が残るようにする
+    const rows = supermarkets.map((item) => ({ id: `${propertyId}:${item.id}`, lon: item.lon, lat: item.lat, tags: item.tags }));
+    await sql.begin(async (tx) => {
+      await tx`delete from geo_features where api_id = ${OSM_SUPERMARKET} and feature_id like ${`${propertyId}:%`}`;
+      if (rows.length === 0) return;
+      await tx`
         insert into geo_features (dataset_version_id, api_id, feature_id, geom, properties)
-        values (${version.id}, ${OSM_SUPERMARKET}, ${`${propertyId}:${item.id}`},
-          extensions.st_setsrid(extensions.st_makepoint(${item.lon}, ${item.lat}), 4326), ${sql.json(item.tags as never)})
+        select ${version.id}, ${OSM_SUPERMARKET}, f->>'id',
+          extensions.st_setsrid(extensions.st_makepoint((f->>'lon')::float8, (f->>'lat')::float8), 4326), f->'tags'
+        from jsonb_array_elements(${tx.json(rows as never)}) f
         on conflict (dataset_version_id, api_id, feature_id) do update set
           geom = excluded.geom, properties = excluded.properties, fetched_at = now()
       `;
-    }
+    });
     result.featuresKept = supermarkets.length;
     result.status = supermarkets.length ? "ok" : "empty";
     result.supermarkets = (await sql<{ name: string; distance_m: number }[]>`

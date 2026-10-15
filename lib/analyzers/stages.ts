@@ -61,12 +61,23 @@ export async function startRun(sql: Sql, propertyId: number, overrides: Partial<
   const versions = await loadActiveVersions(sql);
   const allVersionIds = [...versions.values()].flat().map((v) => v.id);
   const [rules] = await sql<{ version: number | null }[]>`select max(id) as version from rule_revisions`;
-  const [run] = await sql<{ id: number }[]>`
-    insert into analysis_runs (property_id, params, dataset_version_ids, rules_version, status, stage)
-    values (${propertyId}, ${sql.json(params as never)}, ${allVersionIds}, ${rules?.version ?? null}, 'running', 'analyze')
-    returning id
-  `;
-  return { runId: Number(run.id), status: "running", stage: "analyze", error: null };
+  try {
+    const [run] = await sql<{ id: number }[]>`
+      insert into analysis_runs (property_id, params, dataset_version_ids, rules_version, status, stage)
+      values (${propertyId}, ${sql.json(params as never)}, ${allVersionIds}, ${rules?.version ?? null}, 'running', 'analyze')
+      returning id
+    `;
+    return { runId: Number(run.id), status: "running", stage: "analyze", error: null };
+  } catch (error) {
+    // 同時に呼ばれて先に作られていたら、索引（analysis_runs_one_running）で入らないので、そちらを返す
+    // on conflict を使わないのは、マイグレーションの反映前（索引がないとき）でも動くようにするため
+    if ((error as { code?: string }).code !== "23505") throw error;
+    const [other] = await sql<{ id: number }[]>`
+      select id from analysis_runs where property_id = ${propertyId} and status = 'running' order by id desc limit 1
+    `;
+    if (!other) throw error;
+    return readProgress(sql, Number(other.id));
+  }
 }
 
 async function insertFacts(sql: Sql, runId: number, facts: FactDraft[], firstSeq: number) {

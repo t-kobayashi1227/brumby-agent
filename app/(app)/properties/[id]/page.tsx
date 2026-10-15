@@ -13,6 +13,7 @@ import { countSchools } from "../../../../lib/surroundings/fetch";
 import { parseAddress } from "../../../../lib/school-zones/parse";
 import { activeSchoolZoneVersion, findSchoolZone } from "../../../../lib/school-zones/lookup";
 import DeletePropertyButton from "../DeletePropertyButton";
+import { loadCompetitors } from "../../../../lib/competitors";
 
 // 物件の画面：登録した内容の変更と、位置（地図のピン）の確認（設計書 7章、D15）
 export const dynamic = "force-dynamic";
@@ -155,7 +156,8 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
         analyzed={lastAnalyzedAt !== null}
         cityDistricts={cityDistricts}
       />
-      <PropertyForm values={values} />
+      {/* 競合物件の欄も一緒に保存するので、入力済みの競合を入れておく（空のまま保存すると消えてしまう） */}
+      <PropertyForm values={values} competitors={await loadCompetitors(getSql(), propertyId)} />
     </div>
   );
 }
