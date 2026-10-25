@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "db:check": "tsx --env-file=.env.local scripts/db-check.ts",
-    "ingest": "tsx --env-file=.env.local scripts/ingest/index.ts"
+    "facts": "tsx --env-file=.env.local scripts/facts.ts",
+    "ingest": "node --max-old-space-size=10000 --env-file=.env.local --import tsx scripts/ingest/index.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

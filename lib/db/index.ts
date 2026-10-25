@@ -17,7 +17,8 @@ export function getSql(): Sql {
     throw new Error("DATABASE_URL が設定されていません（.env.local を確認してください）");
   }
 
-  const sql = postgres(url, { max: 5, prepare: false });
+  // onnotice：PostGIS が図形を直すときの知らせ（Self-intersection など）は、エラーではないので画面に出さない
+  const sql = postgres(url, { max: 5, prepare: false, onnotice: () => {} });
   globalForDb.brumbySql = sql;
   return sql;
 }
