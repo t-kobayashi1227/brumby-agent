@@ -8,15 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "db:check": "tsx --env-file=.env.local scripts/db-check.ts",
-    "db:check-bus-stops": "tsx --env-file=.env.local scripts/check-bus-stops.ts",
-    "ingest": "tsx --env-file=.env.local scripts/ingest/index.ts",
-    "build:district-areas": "tsx --env-file=.env.local scripts/build-district-areas.ts",
-    "fetch-surroundings": "tsx --env-file=.env.local scripts/fetch-surroundings.ts",
-    "analyze": "tsx --env-file=.env.local scripts/analyze.ts",
-    "seed-rules": "tsx --env-file=.env.local scripts/seed-rules.ts",
-    "import-scoring": "tsx --env-file=.env.local scripts/import-scoring-xlsx.ts",
-    "generate-narrative": "tsx --env-file=.env.local scripts/generate-narrative.ts"
+    "db:check": "tsx --env-file=.env.local scripts/db-check.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

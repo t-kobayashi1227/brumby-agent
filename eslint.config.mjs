@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // 以前の設計のコード（参照用に残す。ビルドの対象外）
+    "legacy/**",
   ]),
 ]);
 

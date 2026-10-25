@@ -3,57 +3,28 @@
 export interface PageDef {
   href: string;
   title: string;
-  /** 架空のデータのモック。ナビには出さない（画面は残す。設計書 D27） */
-  mock?: true;
 }
 
-/** Every page in the prototype, in the order shown in the demo screen-jump menu. */
+/** 画面の一覧（docs/設計まとめ.md の①入力と⑤レポート） */
 export const pages: PageDef[] = [
-  { href: "/", title: "1. ログイン", mock: true },
-  { href: "/dashboard", title: "2. ホーム" },
-  { href: "/properties/new", title: "3. 新規物件登録" },
-  { href: "/research", title: "4. 競合物件リサーチ" },
-  { href: "/research/detail", title: "6. 競合物件リサーチ（競合物件の入力）" },
-  { href: "/research/result", title: "7. AI分析結果（競合診断）" },
-  { href: "/strategy", title: "8. 販売戦略提案" },
-  { href: "/strategy/compare", title: "販売戦略（前回の結果との比較）" },
-  { href: "/monitor", title: "9. 販売モニター", mock: true },
-  { href: "/monitor/0", title: "10. 物件別モニター詳細", mock: true },
-  { href: "/report", title: "11. レポート出力" },
-  { href: "/plan", title: "12. プラン・オプション", mock: true },
-  { href: "/notice", title: "お知らせ", mock: true },
-  { href: "/rules", title: "採点ルール表（物件の評価の基準）" },
-  { href: "/rules/legacy", title: "旧ルール表（2026-10-12まで）" },
+  { href: "/properties/new", title: "物件情報の入力" },
+  { href: "/strategy", title: "販売戦略" },
 ];
 
-/** Resolves the page definition for a pathname (dynamic `/monitor/[id]` maps to the detail page). */
+/** Resolves the page definition for a pathname (dynamic `/strategy/[id]` maps to the detail page). */
 export function findPage(pathname: string): PageDef | undefined {
   const exact = pages.find((p) => p.href === pathname);
   if (exact) return exact;
-  if (pathname.startsWith("/monitor/")) return pages.find((p) => p.href === "/monitor/0");
-  if (/^\/properties\/\d+$/.test(pathname)) return { href: pathname, title: "物件の情報・位置" };
+  if (/^\/strategy\/[^/]+$/.test(pathname)) return { href: pathname, title: "販売戦略の詳細" };
   return undefined;
 }
 
-/** サイドバー。モック（販売モニター・お知らせ・プラン・オプション）は出さない（設計書 D27） */
 export const navItems: { label: string; href: string }[] = [
-  { label: "ホーム", href: "/dashboard" },
-  { label: "物件一覧", href: "/dashboard#properties" },
-  { label: "新規物件登録", href: "/properties/new" },
+  { label: "物件情報の入力", href: "/properties/new" },
   { label: "販売戦略", href: "/strategy" },
-  { label: "採点ルール表", href: "/rules" },
-  { label: "競合物件リサーチ", href: "/research" },
-  { label: "レポート", href: "/report" },
 ];
 
 /** A nav item is active on its own page and on any page nested under it. */
 export function isNavActive(href: string, pathname: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
-
-/** 競合物件リサーチの段階。検索結果の件数の入力（旧 /research/input）は保存先がないので外した */
-export const researchSteps: { num: number; label: string; hrefs: string[] }[] = [
-  { num: 1, label: "検索条件の確認", hrefs: ["/research"] },
-  { num: 2, label: "競合物件の入力", hrefs: ["/research/detail"] },
-  { num: 3, label: "AI分析", hrefs: ["/research/result"] },
-];
