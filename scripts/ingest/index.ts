@@ -5,7 +5,10 @@
 // 「--date 2026-10-24」の形も受け付けるが、PowerShell では npm の前で「--」が消え、npm が --date を自分のオプションとして
 // 取ってしまう。どのシェルでも同じに動くよう「date=2026-10-24」の形を使う
 // 取り込みの一覧と件数・時点：npm run ingest -- status
+// 洪水（a31a-flood）は図形をまとめるのにメモリを 5GB 以上使うので、package.json で Node.js のメモリの上限を 10GB にしている
 // 大規模小売店舗の判定の確認用 CSV：npm run ingest -- d29-review
+// 区内の町の平均件数の計算：npm run ingest -- ward-averages
+// データの行を消して表を詰める（大きなデータを入れ直す前に）：npm run ingest -- clear D31
 import { parseArgs } from "node:util";
 import { getSql } from "../../lib/db";
 import { d01Transactions } from "./jobs/d01-transactions";
@@ -18,6 +21,10 @@ import { n02Stations, p05Offices, p11BusStops, p14Childcare, p29Schools } from "
 import { landPrices, mesh250 } from "./jobs/ksj-prices-mesh";
 import { osm } from "./jobs/osm";
 import { d29LargeStores, writeReviewCsv } from "./jobs/d29-large-stores";
+import { d14SchoolZones } from "./jobs/d14-school-zones";
+import { buyers } from "./jobs/buyers";
+import { computeWardAverages } from "./ward-averages";
+import { clearDataset } from "./clear";
 import { d04Zoning, d35Liquefaction } from "./jobs/xkt-zones";
 import { runIngest, type IngestJob } from "./lib/runner";
 
@@ -43,6 +50,8 @@ const jobs: Record<string, IngestJob<unknown>> = {
   "niigata-population": niigataPopulation,
   osm,
   "d29-large-stores": d29LargeStores,
+  "d14-school-zones": d14SchoolZones,
+  buyers,
 };
 
 async function status() {
@@ -65,6 +74,15 @@ async function main() {
   if (name === "status") return status();
   // 大規模小売店舗の判定の確認用 CSV を書き出す（DB は使わない）
   if (name === "d29-review") return console.log(writeReviewCsv());
+  // データの行を消して表を詰める（大きなデータを入れ直す前に。例：clear D31）
+  if (name === "clear") {
+    const id = rest[0];
+    const job = Object.values(jobs).find((j) => id && j.datasets.includes(id));
+    if (!job) throw new Error(`データの id を指定してください（例：npm run ingest -- clear D31）`);
+    return console.log(await clearDataset(getSql(), id, job.table));
+  }
+  // 区内の町の平均件数（施設を入れ直したら計算し直す）
+  if (name === "ward-averages") return console.log(await computeWardAverages(getSql(), /^area=(\w+)$/.exec(rest[0] ?? "")?.[1]));
   const job = name ? jobs[name] : undefined;
   if (!job) {
     console.error(`ジョブ名を指定してください：status / ${Object.keys(jobs).join(" / ")}`);

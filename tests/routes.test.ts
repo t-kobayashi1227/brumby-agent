@@ -11,6 +11,10 @@ describe("findPage", () => {
     expect(findPage("/strategy/12")?.title).toBe("販売戦略の詳細");
   });
 
+  it("/properties/<id>/facts は事実シートの画面になる", () => {
+    expect(findPage("/properties/3/facts")?.title).toBe("事実シート");
+  });
+
   it("知らない画面は undefined", () => {
     expect(findPage("/dashboard")).toBeUndefined();
   });

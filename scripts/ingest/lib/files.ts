@@ -40,13 +40,13 @@ export function rawFiles(rawDir: string, opts: { refresh: boolean; log: (m: stri
     },
     find(pattern, hint) {
       const names = existsSync(dir) ? readdirSync(dir).filter((n) => pattern.test(n)) : [];
-      if (names.length === 0) throw new Error(`ファイルがありません。${hint} を data/raw/${rawDir}/ に置いてください`);
+      if (names.length === 0) throw new Error(`ファイルがありません。${hint} を data/raw/${rawDir}/ に置いてください（探した場所：${dir}）`);
       if (names.length > 1) throw new Error(`data/raw/${rawDir}/ に候補が2つ以上あります（${names.join(", ")}）。1つにしてください`);
       return { name: names[0], body: new Uint8Array(readFileSync(join(dir, names[0]))) };
     },
     findAll(pattern, hint) {
       const names = existsSync(dir) ? readdirSync(dir).filter((n) => pattern.test(n)).sort() : [];
-      if (names.length === 0) throw new Error(`ファイルがありません。${hint} を data/raw/${rawDir}/ に置いてください`);
+      if (names.length === 0) throw new Error(`ファイルがありません。${hint} を data/raw/${rawDir}/ に置いてください（探した場所：${dir}）`);
       return names.map((name) => ({ name, body: new Uint8Array(readFileSync(join(dir, name))) }));
     },
   };
