@@ -110,6 +110,9 @@ properties ─┬─ property_transports（最大2）
 
 ### strategy_runs / agent_calls / check_results
 
+- `npm run strategy -- <物件の番号>` で、最新の事実シートから7つのエージェントを動かします（`lib/agents/run.ts`）。指示文は `prompts/`（設計まとめと一字一句同じことを `tests/agents.test.ts` で確かめます）、作り直しの依頼文は `prompts/rebuild.txt` です。
+- `strategy_runs.result` は `{fact_sheet_id, 分析, メイン, 媒体, 予算シミュレーション}` です。IDのない文は外した後の形です。
+
 - 同じ物件で同時に動く実行は1つだけです（`strategy_runs_one_active`）。
 - `agent_calls.attempt` は、1が最初の呼び出し、2が作り直しです（作り直しは1回だけ）。
 - `prompt_sha256` は指示文の中身のハッシュです。指示文を直したとき、どの版で動かしたかが分かります。

@@ -89,6 +89,9 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
         <Link href={`/properties/${propertyId}/facts`} className="text-xs text-brand underline">
           事実シートを見る →
         </Link>
+        <Link href={`/strategy/${propertyId}`} className="text-xs text-brand underline">
+          販売戦略を見る →
+        </Link>
       </div>
       {sp.created === "1" && (
         <div className="rounded-md border border-[#bfe5c6] bg-[#e9f8ec] px-4 py-3 text-xs text-[#157347]">

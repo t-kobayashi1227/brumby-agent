@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSql } from "../../../../../lib/db";
 import type { FactSheet } from "../../../../../lib/facts/types";
-import { card, emptyState } from "../../../../_lib/ui";
+import { btnPrimary, card, emptyState } from "../../../../_lib/ui";
 import FactSheetRunner from "./FactSheetRunner";
 
 // 事実シートの画面：段階3で、作った事実の値を利用者が確かめるための表（docs/実装の進め方.md「3. 事実シートの作成」）
@@ -38,7 +38,12 @@ export default async function FactSheetPage({ params, searchParams }: PageProps<
         <Link href={`/properties/${propertyId}`} className="text-xs text-brand underline">
           ← 物件の画面に戻る
         </Link>
-        <div className="text-sm font-bold text-ink">物件ID {property.code} の事実シート</div>
+        <div className="text-sm font-bold text-ink mr-auto">物件ID {property.code} の事実シート</div>
+        {latest && (
+          <Link href={`/strategy/${propertyId}`} className={btnPrimary}>
+            販売戦略へ進む →
+          </Link>
+        )}
       </div>
       <FactSheetRunner propertyId={propertyId} autoStart={sp.auto === "1"} hasSheet={!!latest} />
       {!latest ? (

@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
   // 物件の写真をフォーム（Server Action）で送る。ブラウザで縮めてから送るが、標準の上限 1MB を超えることがあるので広げる
   // （写真は 2.5MB まで受け付ける：lib/photos.ts。Vercel の関数のリクエストの上限 4.5MB より小さくする）
   experimental: { serverActions: { bodySizeLimit: "3mb" } },
+  // エージェントの指示文（prompts/）は実行時にファイルから読むので、戦略を作る API の関数に一緒に載せる（lib/agents/prompts.ts）
+  outputFileTracingIncludes: { "/api/properties/*/strategy": ["./prompts/**"] },
   // トップの画面は持たない（見本のログイン画面は legacy/ に移した）。アクセス制限は Basic認証（proxy.ts、設計書 D5・D27）
   async redirects() {
     return [{ source: "/", destination: "/strategy", permanent: false }];
