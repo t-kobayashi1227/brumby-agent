@@ -23,7 +23,7 @@ export const stripePlaceholder = "bg-stripes flex items-center justify-center fo
 // ---- class helpers for stateful UI parts ----
 
 export function navItemClass(active: boolean): string {
-  return `block px-5 py-3 text-[13px] cursor-pointer ${active ? "bg-brand text-white font-bold" : "text-[#a8b2c8]"}`;
+  return `flex items-center gap-3 px-3.5 py-3 rounded-lg text-[13px] cursor-pointer text-white ${active ? "bg-white/20 font-bold" : "hover:bg-white/10"}`;
 }
 
 export function stepClass(active: boolean): string {
