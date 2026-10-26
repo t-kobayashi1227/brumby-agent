@@ -82,8 +82,8 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
   return (
     <div className="grid gap-5">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href="/strategy" className="text-xs text-brand underline">
-          ← 物件の一覧に戻る
+        <Link href="/properties" className="text-xs text-brand underline">
+          ← 物件一覧に戻る
         </Link>
         <div className="text-sm font-bold text-ink mr-auto">物件ID {p.code}</div>
         <Link href={`/properties/${propertyId}/facts`} className="text-xs text-brand underline">

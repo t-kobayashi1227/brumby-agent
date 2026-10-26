@@ -196,7 +196,7 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
       // 住所を変えたら位置を取り直す（地図で直したピンも、住所が変わったら取り直す）
       const warning = before.address !== values.address ? await geocodeAndStore(sql, id, values.address) : null;
       revalidatePath(`/properties/${id}`);
-      revalidatePath("/strategy");
+      revalidatePath("/properties");
       if (warning) return { error: `保存しました。${warning}` };
       return { ok: before.address !== values.address ? "保存しました。住所が変わったので、位置を取り直しました。地図のピンを確かめてください。" : "保存しました。" };
     }
@@ -207,7 +207,7 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
       return Number(row.id);
     });
     await geocodeAndStore(sql, createdId, values.address);
-    revalidatePath("/strategy");
+    revalidatePath("/properties");
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }

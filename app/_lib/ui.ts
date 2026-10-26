@@ -10,6 +10,9 @@ export const checkLabel = "flex gap-1.5 text-[13px] text-body";
 
 export const btnPrimary = "px-5 py-2.5 bg-brand rounded-md text-white text-[13px] font-bold cursor-pointer";
 
+/** 新しいデザイン（2026-10-26）の青い主ボタン */
+export const btnAction = "flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2.5 text-[13px] font-bold text-white shadow-sm cursor-pointer hover:bg-[#2459b0] disabled:opacity-60";
+
 export const btnSecondary = "px-5 py-2.5 bg-white border border-field rounded-md text-body text-[13px] cursor-pointer";
 
 export const tableHead = "grid gap-2 text-base px-1 pb-2 border-b border-canvas";
