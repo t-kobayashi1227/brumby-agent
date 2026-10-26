@@ -1,13 +1,17 @@
 // Single source of truth for page URLs, header titles and sidebar navigation.
 
+import { ChartIcon, DocIcon } from "../_components/icons";
+
 export interface PageDef {
   href: string;
   title: string;
+  /** 画面の中に自前の見出しを持つ（ヘッダーには題名を出さない） */
+  ownHeading?: boolean;
 }
 
 /** 画面の一覧（docs/設計まとめ.md の①入力と⑤レポート） */
 export const pages: PageDef[] = [
-  { href: "/properties/new", title: "物件情報の入力" },
+  { href: "/properties/new", title: "物件情報の入力", ownHeading: true },
   { href: "/strategy", title: "販売戦略" },
 ];
 
@@ -21,9 +25,9 @@ export function findPage(pathname: string): PageDef | undefined {
   return undefined;
 }
 
-export const navItems: { label: string; href: string }[] = [
-  { label: "物件情報の入力", href: "/properties/new" },
-  { label: "販売戦略", href: "/strategy" },
+export const navItems: { label: string; href: string; icon: (p: { className?: string }) => React.ReactNode }[] = [
+  { label: "物件情報の入力", href: "/properties/new", icon: DocIcon },
+  { label: "販売戦略", href: "/strategy", icon: ChartIcon },
 ];
 
 /** A nav item is active on its own page and on any page nested under it. */

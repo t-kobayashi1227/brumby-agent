@@ -240,3 +240,19 @@ export async function regeocode(propertyId: number): Promise<PropertyFormState> 
   revalidatePath(`/properties/${propertyId}`);
   return warning ? { error: warning } : { ok: "住所から位置を取り直しました。地図のピンを確かめてください。" };
 }
+
+/** 登録の前に、住所が国土地理院の住所検索で見つかるかを確かめる（保存はしない） */
+export async function previewAddress(address: string): Promise<PropertyFormState> {
+  const q = String(address ?? "").trim();
+  if (q === "") return { error: "住所を入れてください" };
+  if (q.length > 200) return { error: "住所が長すぎます" };
+  let hit;
+  try {
+    hit = await geocodeAddress(q);
+  } catch {
+    return { error: "住所検索に接続できませんでした。登録したあと、地図でピンを置けます。" };
+  }
+  if (!hit) return { error: "この住所では位置を出せませんでした。番地まで入っているか確かめてください。登録したあと、地図でピンを置くこともできます。" };
+  // 町丁目までしか当たらないこともあるため、「番地まで合った」とは言わない
+  return { ok: `住所検索では「${hit.title || q}」として見つかりました。番地まで合っているとは限らないため、登録したあと地図でピンの位置を確かめてください。` };
+}
