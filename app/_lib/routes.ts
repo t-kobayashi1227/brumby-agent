@@ -1,6 +1,6 @@
 // Single source of truth for page URLs, header titles and sidebar navigation.
 
-import { ChartIcon, DocIcon } from "../_components/icons";
+import { GearIcon, ListIcon } from "../_components/icons";
 
 export interface PageDef {
   href: string;
@@ -9,10 +9,11 @@ export interface PageDef {
   ownHeading?: boolean;
 }
 
-/** 画面の一覧（docs/設計まとめ.md の①入力と⑤レポート） */
+/** 画面の一覧（docs/設計まとめ.md の①入力と⑤レポート、物件一覧、設定） */
 export const pages: PageDef[] = [
+  { href: "/properties", title: "物件一覧" },
   { href: "/properties/new", title: "物件情報の入力", ownHeading: true },
-  { href: "/strategy", title: "販売戦略" },
+  { href: "/settings", title: "設定" },
 ];
 
 /** Resolves the page definition for a pathname (dynamic `/strategy/[id]` maps to the detail page). */
@@ -25,12 +26,23 @@ export function findPage(pathname: string): PageDef | undefined {
   return undefined;
 }
 
-export const navItems: { label: string; href: string; icon: (p: { className?: string }) => React.ReactNode }[] = [
-  { label: "物件情報の入力", href: "/properties/new", icon: DocIcon },
-  { label: "販売戦略", href: "/strategy", icon: ChartIcon },
+export interface NavItem {
+  label: string;
+  href: string;
+  icon: (p: { className?: string }) => React.ReactNode;
+  /** href の下の画面のほかに、選択中にする画面（先頭一致） */
+  alsoActive?: string[];
+}
+
+// 販売戦略のレポート（/strategy/[id]）は物件ごとの画面なので、「物件一覧」を選択中にする
+export const navItems: NavItem[] = [
+  { label: "物件一覧", href: "/properties", icon: ListIcon, alsoActive: ["/strategy"] },
+  { label: "設定", href: "/settings", icon: GearIcon },
 ];
 
+const underPath = (base: string, pathname: string) => pathname === base || pathname.startsWith(`${base}/`);
+
 /** A nav item is active on its own page and on any page nested under it. */
-export function isNavActive(href: string, pathname: string): boolean {
-  return pathname === href || pathname.startsWith(`${href}/`);
+export function isNavActive(item: Pick<NavItem, "href" | "alsoActive">, pathname: string): boolean {
+  return underPath(item.href, pathname) || (item.alsoActive ?? []).some((base) => underPath(base, pathname));
 }
