@@ -12,6 +12,7 @@ import type {
   CompetitorInput,
   DatasetInfo,
   MarketInput,
+  MarketTrade,
   MeshTotals,
   MetricMap,
   NearbyKindInput,
@@ -22,7 +23,7 @@ import type {
   TransportInput,
   ZoneHit,
 } from "./build";
-import { ageBandOf } from "./build";
+import { ageBandOf, selectMarket } from "./build";
 import type { NearbyItem } from "./format";
 import { parseAddress, pinAddress, resolveZone, wardFromSourceUrl, type ZoneRow } from "./school-zones";
 import type { FactStepKey } from "./steps";
@@ -196,29 +197,35 @@ export async function collect(sql: Sql, propertyId: number, today = todayJst(), 
 type Point = PendingQuery<Row[]>;
 
 /**
- * 区×築年数の相場（D01）。物件のある区（市区町村コード）の「宅地(土地と建物)」の取引を、取り込んだ全部の年で数える
- * 町だけでは件数が少ないため、区で見る（2026-10-25 小林さんと決定）。築年数は取引の年と建築年の差
+ * 区×築年数の相場（D01）。物件のある区（市区町村コード）の戸建ての取引を引き、帯と年の範囲は selectMarket で決める
+ * 戸建ての条件は docs/相場の出し方変更.md 3.3（2026-10-28 小林さんと決定）。用途が空（成約価格情報）なら構造で判断する
  */
 async function collectMarket(sql: Sql, town: TownInfo | null, buildingAge: number): Promise<MarketInput | null> {
   if (!town) return null;
-  const band = ageBandOf(buildingAge);
-  const rows = await sql<{ year: number; building_year: number; trade_price: string }[]>`
-    select year, building_year, trade_price from transactions
+  // 「直近5年」は取り込んだ最新の年から数える
+  const [latest] = await sql<{ year: number | null }[]>`select max(year) as year from transactions`;
+  if (latest?.year == null) return null;
+  const rows = await sql<{ year: number; building_year: number; trade_price: string; floor_sqm: string; land_sqm: string | null }[]>`
+    select year, building_year, trade_price, floor_sqm, land_sqm from transactions
     where municipality_code = ${town.city_code} and type = '宅地(土地と建物)'
+      and (
+        (string_to_array(raw->>'Use', '、') @> array['住宅']
+          and string_to_array(raw->>'Use', '、') <@ array['住宅', '駐車場', '倉庫', 'その他'])
+        or (coalesce(raw->>'Use', '') = '' and structure in ('木造', '軽量鉄骨造', '鉄骨造'))
+      )
+      and not (coalesce(raw->>'Remarks', '') like any (array['%調停%', '%競売%', '%関係者間%', '%瑕疵%', '%隣地%']))
+      and floor_sqm between 50 and 300
       and building_year is not null and trade_price is not null
+      and year - building_year >= 0
   `;
-  if (rows.length === 0) return null;
-  const inBand = rows.filter((r) => {
-    const age = r.year - r.building_year;
-    return age >= 0 && age >= band.from && (band.to === null || age <= band.to);
-  });
-  const years = rows.map((r) => r.year);
-  return {
-    band,
-    fromYear: Math.min(...years),
-    toYear: Math.max(...years),
-    wardPrices: inBand.map((r) => Number(r.trade_price)),
-  };
+  const trades: MarketTrade[] = rows.map((r) => ({
+    year: r.year,
+    building_year: r.building_year,
+    price: Number(r.trade_price),
+    floor_sqm: Number(r.floor_sqm),
+    land_sqm: r.land_sqm === null ? null : Number(r.land_sqm),
+  }));
+  return selectMarket(trades, ageBandOf(buildingAge), latest.year);
 }
 
 /** 近くの公示地・基準地（D02・D03）。住宅地の地点のうち、3km以内でいちばん近いもの（新しい年） */

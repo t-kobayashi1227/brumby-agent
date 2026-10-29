@@ -63,16 +63,27 @@ export interface TownInfo {
 
 export interface AgeBand {
   from: number;
-  /** 上限なし（築40年以上）は null */
+  /** 上限なし（築50年以上）は null */
   to: number | null;
+}
+
+/** 相場に使う戸建ての取引（collect.ts の条件で絞ったもの） */
+export interface MarketTrade {
+  year: number;
+  building_year: number;
+  /** 取引価格（円） */
+  price: number;
+  floor_sqm: number;
+  land_sqm: number | null;
 }
 
 export interface MarketInput {
   band: AgeBand;
+  /** 相場に使った取引の最初と最後の年 */
   fromYear: number;
   toYear: number;
-  /** 物件のある区の、同じ築年数帯の取引の価格（円） */
-  wardPrices: number[];
+  /** 物件のある区の、同じ築年数帯で、年の範囲に入る取引 */
+  trades: MarketTrade[];
 }
 
 export interface LandPriceInput {
@@ -280,8 +291,11 @@ function propertyFacts(c: Collected): FactDraft[] {
 
 // ---- M 相場 ----
 
+// 築0〜1年、2〜9年、10〜19年 … 40〜49年、50年以上（2026-10-27 小林さんと決定）
 export function ageBandOf(age: number): AgeBand {
-  if (age >= 40) return { from: 40, to: null };
+  if (age >= 50) return { from: 50, to: null };
+  if (age <= 1) return { from: 0, to: 1 };
+  if (age <= 9) return { from: 2, to: 9 };
   const from = Math.floor(age / 10) * 10;
   return { from, to: from + 9 };
 }
@@ -290,19 +304,59 @@ export function bandLabel(b: AgeBand): string {
   return b.to === null ? `築${b.from}年以上` : `築${b.from}〜${b.to}年`;
 }
 
+/** 直近の年数と、直近だけで足りるとみなす件数（docs/相場の出し方変更.md 3.5） */
+export const MARKET_RECENT_YEARS = 5;
+export const MARKET_MIN_COUNT = 20;
+/** 1坪の面積（㎡）。400/121 ≒ 3.30578 */
+export const TSUBO_SQM = 400 / 121;
+
+/** 1坪あたりの価格（円） */
+export function pricePerTsubo(priceYen: number, floorSqm: number): number {
+  return (priceYen / floorSqm) * TSUBO_SQM;
+}
+
+/**
+ * 相場に使う取引を選ぶ。帯に入る取引のうち、直近5年（取り込んだ最新の年から数える）で20件以上なら直近5年、
+ * 足りなければ全部の年（20件未満でもそのまま）。帯は広げない。0件なら null（2026-10-28 小林さんと決定）
+ */
+export function selectMarket(rows: MarketTrade[], band: AgeBand, latestYear: number): MarketInput | null {
+  const inBand = rows.filter((r) => {
+    const age = r.year - r.building_year;
+    return age >= band.from && (band.to === null || age <= band.to);
+  });
+  const recent = inBand.filter((r) => r.year > latestYear - MARKET_RECENT_YEARS);
+  const trades = recent.length >= MARKET_MIN_COUNT ? recent : inBand;
+  if (trades.length === 0) return null;
+  const years = trades.map((r) => r.year);
+  return { band, fromYear: Math.min(...years), toYear: Math.max(...years), trades };
+}
+
+const formatTsubo = (yen: number) => `${formatManYen1(yen)}/坪`;
+
 function marketFacts(c: Collected): FactDraft[] {
   const src = sourcesOf(c, ["D01"]);
   const m = c.market;
+  const p = c.property;
   const ward = c.town?.ward ?? "区";
-  if (!m) return [fact("M", "区の相場（戸建）", null, src), fact("M", "相場比（区の中央値に対する価格）", null, src), landFact(c)];
-  // 町だけでは件数が少ないため、区×築年数で見る（2026-10-25 小林さんと決定）。年は取り込んだ全部
+  const band = bandLabel(m?.band ?? ageBandOf(p.building_age));
+  const labels = {
+    unit: `区の相場（${ward}・${band}・戸建・延床の坪単価）`,
+    ratio: `相場比（${ward}の${band}の延床の坪単価の中央値に対する、物件の坪単価）`,
+    floor: `区の相場の取引の延床面積（${ward}・${band}）`,
+    land: `区の相場の取引の土地面積（${ward}・${band}）`,
+  };
+  if (!m) return [...Object.values(labels).map((l) => fact("M", l, null, src)), landFact(c)];
+  // 区×築年数帯の、延床の坪単価の中央値で比べる。総額の相場は出さない（docs/相場の出し方変更.md 3.6）
   const period = { ...src, 時点: `${m.fromYear}〜${m.toYear}` };
-  const wardMedian = median(m.wardPrices);
-  const price = c.property.price_man_yen * 10_000;
-  const band = bandLabel(m.band);
+  const unitMedian = median(m.trades.map((t) => pricePerTsubo(t.price, t.floor_sqm)));
+  const own = pricePerTsubo(p.price_man_yen * 10_000, p.building_sqm);
+  const floorMedian = median(m.trades.map((t) => t.floor_sqm));
+  const landMedian = median(m.trades.flatMap((t) => (t.land_sqm === null ? [] : [t.land_sqm])));
   return [
-    fact("M", `区の相場（${ward}・${band}・戸建）`, wardMedian !== null ? `中央値${formatManYen(wardMedian)}（${m.wardPrices.length}件）` : null, period),
-    fact("M", `相場比（${ward}の${band}の中央値に対する価格）`, wardMedian !== null ? `${(price / wardMedian).toFixed(2)}倍` : null, period),
+    fact("M", labels.unit, unitMedian !== null ? `中央値${formatTsubo(unitMedian)}（${m.trades.length}件）` : null, period),
+    fact("M", labels.ratio, unitMedian !== null ? `${(own / unitMedian).toFixed(2)}倍（物件${formatTsubo(own)}）` : null, period),
+    fact("M", labels.floor, floorMedian !== null ? `中央値${sqm(floorMedian)}（物件${sqm(p.building_sqm)}）` : null, period),
+    fact("M", labels.land, landMedian !== null ? `中央値${sqm(landMedian)}（物件${sqm(p.land_sqm)}）` : null, period),
     landFact(c),
   ];
 }

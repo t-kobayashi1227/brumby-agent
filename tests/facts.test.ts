@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { ageBandOf, bandLabel, buildFacts, depthLower, sourceOf, type Collected, type DatasetInfo } from "../lib/facts/build";
+import {
+  ageBandOf,
+  bandLabel,
+  buildFacts,
+  depthLower,
+  pricePerTsubo,
+  selectMarket,
+  sourceOf,
+  type Collected,
+  type DatasetInfo,
+  type MarketTrade,
+} from "../lib/facts/build";
 import { toD10TownName } from "../lib/facts/collect";
-import { formatChange, formatDistance, formatNearby, median } from "../lib/facts/format";
+import { formatChange, formatDistance, formatManYen1, formatNearby, median } from "../lib/facts/format";
 import { numberFacts, type Fact } from "../lib/facts/types";
 
 // 物件・施設名・数値は架空（設計まとめ「見本：架空の物件」に合わせた 2,480万円の中古）
@@ -73,7 +84,12 @@ function sample(overrides: Partial<Collected> = {}): Collected {
       band: { from: 20, to: 29 },
       fromYear: 2015,
       toYear: 2026,
-      wardPrices: [18_000_000, 20_000_000, 21_000_000, 22_000_000],
+      trades: [
+        { year: 2015, building_year: 1990, price: 18_000_000, floor_sqm: 100, land_sqm: 180 },
+        { year: 2018, building_year: 1995, price: 20_000_000, floor_sqm: 110, land_sqm: 200 },
+        { year: 2023, building_year: 2000, price: 21_000_000, floor_sqm: 100, land_sqm: 220 },
+        { year: 2026, building_year: 2004, price: 22_000_000, floor_sqm: 120, land_sqm: null },
+      ],
     },
     landPrice: { dataset_id: "D02", address: "新潟県　新潟市西区架空町２丁目１番", price_per_sqm: 35800, change_rate: 0.6, year: 2026, distance_m: 652 },
     zones: [
@@ -175,10 +191,55 @@ describe("書き方", () => {
   });
 
   it("築年数帯", () => {
-    expect(bandLabel(ageBandOf(0))).toBe("築0〜9年");
+    expect(bandLabel(ageBandOf(0))).toBe("築0〜1年");
+    expect(bandLabel(ageBandOf(1))).toBe("築0〜1年");
+    expect(bandLabel(ageBandOf(2))).toBe("築2〜9年");
+    expect(bandLabel(ageBandOf(9))).toBe("築2〜9年");
+    expect(bandLabel(ageBandOf(10))).toBe("築10〜19年");
     expect(bandLabel(ageBandOf(22))).toBe("築20〜29年");
-    expect(bandLabel(ageBandOf(45))).toBe("築40年以上");
+    expect(bandLabel(ageBandOf(39))).toBe("築30〜39年");
+    expect(bandLabel(ageBandOf(45))).toBe("築40〜49年");
+    expect(bandLabel(ageBandOf(49))).toBe("築40〜49年");
+    expect(bandLabel(ageBandOf(50))).toBe("築50年以上");
+    expect(bandLabel(ageBandOf(72))).toBe("築50年以上");
   });
+
+  it("延床の坪単価（1坪 = 400/121㎡）", () => {
+    expect(formatManYen1(pricePerTsubo(20_000_000, 100))).toBe("66.1万円");
+  });
+});
+
+describe("相場に使う取引の選び方（selectMarket）", () => {
+  // 築年数 age の取引を year に count 件
+  const trades = (year: number, age: number, count: number): MarketTrade[] =>
+    Array.from({ length: count }, () => ({ year, building_year: year - age, price: 20_000_000, floor_sqm: 100, land_sqm: 200 }));
+  const band = ageBandOf(22);
+
+  it("直近5年で20件以上なら直近5年だけを使う", () => {
+    const m = selectMarket([...trades(2016, 25, 30), ...trades(2022, 22, 12), ...trades(2026, 20, 8)], band, 2026);
+    expect(m).toMatchObject({ fromYear: 2022, toYear: 2026 });
+    expect(m!.trades).toHaveLength(20);
+  });
+
+  it("直近5年で20件に足りなければ全部の年を使い、20件未満でもそのまま出す", () => {
+    const m = selectMarket([...trades(2015, 25, 3), ...trades(2021, 22, 4), ...trades(2022, 22, 5)], band, 2026);
+    expect(m).toMatchObject({ fromYear: 2015, toYear: 2022 });
+    expect(m!.trades).toHaveLength(12);
+  });
+
+  it("帯の外の取引は入らず、帯に無ければ null", () => {
+    const rows = [...trades(2024, 19, 5), ...trades(2024, 30, 5), ...trades(2024, 25, 2)];
+    expect(selectMarket(rows, band, 2026)!.trades).toHaveLength(2);
+    expect(selectMarket(trades(2024, 30, 5), band, 2026)).toBeNull();
+  });
+
+  it("新築（築0年）は築0〜1年の帯の取引と比べる", () => {
+    const m = selectMarket([...trades(2025, 0, 2), ...trades(2025, 1, 3), ...trades(2025, 2, 4)], ageBandOf(0), 2026);
+    expect(m!.trades).toHaveLength(5);
+  });
+});
+
+describe("書き方（続き）", () => {
 
   it("町名の書き方をそろえる", () => {
     expect(toD10TownName("青山七丁目")).toBe("青山７丁目");
@@ -238,19 +299,37 @@ describe("事実シートの組み立て", () => {
     expect(find(facts, "広告予算の総額").値).toBe("入力なし");
   });
 
-  it("相場（M）：区×築年数の中央値と相場比（年は取り込んだ全部）", () => {
-    const m = find(facts, /^区の相場/);
-    expect(m.項目).toBe("区の相場（西区・築20〜29年・戸建）");
-    expect(m).toMatchObject({ 値: "中央値2,050万円（4件）", 時点: "2015〜2026", 出典: "不動産情報ライブラリ XIT001" });
+  it("相場（M）：区×築年数の延床の坪単価の中央値と相場比、延床・土地面積", () => {
+    const m = find(facts, /^区の相場（/);
+    expect(m).toMatchObject({
+      id: "M-01",
+      項目: "区の相場（西区・築20〜29年・戸建・延床の坪単価）",
+      値: "中央値60.4万円/坪（4件）",
+      時点: "2015〜2026",
+      出典: "不動産情報ライブラリ XIT001",
+    });
     expect(m).not.toHaveProperty("比較");
-    expect(find(facts, /^相場比（西区/).値).toBe("1.21倍");
-    expect(find(facts, "近くの公示地（住宅地）").値).toBe("35,800円/㎡（前年比+0.6%）、物件から直線650m、所在地：新潟県新潟市西区架空町２丁目１番");
+    expect(find(facts, /^相場比（西区/)).toMatchObject({
+      id: "M-02",
+      項目: "相場比（西区の築20〜29年の延床の坪単価の中央値に対する、物件の坪単価）",
+      値: "1.29倍（物件77.7万円/坪）",
+    });
+    expect(find(facts, /^区の相場の取引の延床面積/)).toMatchObject({ id: "M-03", 値: "中央値105㎡（物件105.5㎡）", 時点: "2015〜2026" });
+    // 土地面積の無い取引は除いて中央値を出す
+    expect(find(facts, /^区の相場の取引の土地面積/)).toMatchObject({ id: "M-04", 値: "中央値200㎡（物件200㎡）" });
+    expect(find(facts, "近くの公示地（住宅地）")).toMatchObject({
+      id: "M-05",
+      値: "35,800円/㎡（前年比+0.6%）、物件から直線650m、所在地：新潟県新潟市西区架空町２丁目１番",
+    });
   });
 
-  it("相場（M）：同じ築年数帯の取引が無ければ「取得できず」", () => {
-    const f = buildFacts(sample({ market: { ...sample().market!, wardPrices: [] } }));
-    expect(find(f, /^区の相場/)).toMatchObject({ 値: null, 状態: "取得できず" });
-    expect(find(f, /^相場比/).状態).toBe("取得できず");
+  it("相場（M）：取引が無ければ4件とも「取得できず」で、IDの並びは変わらない", () => {
+    const f = buildFacts(sample({ market: null }));
+    expect(find(f, /^区の相場（/)).toMatchObject({ id: "M-01", 項目: "区の相場（西区・築20〜29年・戸建・延床の坪単価）", 値: null, 状態: "取得できず" });
+    expect(find(f, /^相場比/)).toMatchObject({ id: "M-02", 状態: "取得できず" });
+    expect(find(f, /^区の相場の取引の延床面積/)).toMatchObject({ id: "M-03", 状態: "取得できず" });
+    expect(find(f, /^区の相場の取引の土地面積/)).toMatchObject({ id: "M-04", 状態: "取得できず" });
+    expect(find(f, "近くの公示地（住宅地）").id).toBe("M-05");
   });
 
   it("エリア（A）：町名別人口から割合を計算し、区と並べる", () => {
