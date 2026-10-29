@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // matcher を付けないので、Server Actions（各画面への POST）もここを通る
 //
 // 環境変数：BASIC_AUTH_PASSWORD（共通パスワード、必須）、BASIC_AUTH_USER（省略時は brumby）
-// パスワードが未設定のときは、ローカルの開発（next dev）だけ通し、それ以外は 503 で止める（設定漏れで公開しないため）
+// パスワードが未設定のときは、認証をかけずに通す（一時的に解除中。元はローカルの開発（next dev）以外は 503 で止めていた）
 
 const REALM = "BRUMBY PoC";
 
@@ -34,13 +34,8 @@ export function proxy(request: NextRequest) {
   const password = process.env.BASIC_AUTH_PASSWORD;
   const user = process.env.BASIC_AUTH_USER || "brumby";
 
-  if (!password) {
-    if (process.env.NODE_ENV === "development") return NextResponse.next();
-    return new NextResponse("BASIC_AUTH_PASSWORD が設定されていないため、表示できません。", {
-      status: 503,
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
-  }
+  // TODO: 一時的に解除中。戻すときは、未設定なら next dev 以外は 503 で止める形に戻す
+  if (!password) return NextResponse.next();
 
   const given = readCredentials(request.headers.get("authorization"));
   // ユーザー名とパスワードは両方とも比べる（片方だけで判定を打ち切らない）

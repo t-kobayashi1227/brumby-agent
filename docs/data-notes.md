@@ -33,7 +33,7 @@ BRUMBY PoCのデータまわり（DB、公開データ、取り込み）の仕�
 | `ANTHROPIC_WORKSPACE_ID` | （任意）workspace に紐づかないAPIキー（`sk-ant-usr…` など）を使うときの workspace の ID（`wrkspc_…`）。あれば `anthropic-workspace-id` ヘッダーで送る |
 | `ANTHROPIC_MODEL` | （任意）AIの文章のモデル。空なら `claude-haiku-5-5`（PoCの開発テスト用の安いモデル）。例：`claude-sonnet-5` |
 | `ANTHROPIC_EFFORT` | （任意）AIが考える深さ。`low`／`medium`／`high`／`xhigh`／`max`。空なら `low` |
-| `BASIC_AUTH_PASSWORD` | Basic認証の共通パスワード（`proxy.ts`、設計書 D5）。未設定だと `next dev` 以外では 503 で止まる |
+| `BASIC_AUTH_PASSWORD` | Basic認証の共通パスワード（`proxy.ts`、設計書 D5）。未設定だと認証なしで表示される（一時的に解除中。元は `next dev` 以外では 503 で止めていた） |
 | `BASIC_AUTH_USER` | Basic認証のユーザー名（省略時は `brumby`） |
 
 ### Vercel の環境変数（設計書 D5）
