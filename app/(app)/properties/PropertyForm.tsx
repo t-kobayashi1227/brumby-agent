@@ -90,8 +90,8 @@ const EMPTY_COMPETITOR: CompetitorValues = { price_man_yen: null, address: null,
 
 const COMPETITOR_FIELDS = ["price_man_yen", "address", "building_sqm", "land_sqm", "building_age"] as const;
 
-/** 特徴ピックアップの入力例。押すと欄の末尾に足す */
-const FEATURE_EXAMPLES = ["南向きリビング", "シャッター車庫あり", "小屋裏収納あり", "太陽光発電あり", "閑静な住宅街", "角地"];
+/** 特徴ピックアップの入力例。押すと欄の末尾に足す（2026-10-29 BRUMBY様から「一般的な例」としていただいたもの） */
+const FEATURE_EXAMPLES = ["カーポート付き", "小学校近く", "南向き", "前面道路6m以上", "角地"];
 
 const str = (v: string | number | null | undefined) => (v === null || v === undefined ? "" : String(v));
 const yesNo = (v: boolean | null) => (v === null ? "" : v ? "あり" : "なし");
