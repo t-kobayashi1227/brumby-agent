@@ -78,7 +78,8 @@ export default function FactSheetTable({ facts }: { facts: Fact[] }) {
       <FactLegend facts={facts} onJump={jump} />
       {/* 列の幅を決めて横スクロールにする（狭い画面で値や出典が細く折り返されないように）。ID の列は横に動かしても見えるよう固定する */}
       <div className="overflow-x-auto -mx-5 px-5">
-        <table className="w-full table-fixed text-[14px] text-ink border-collapse" style={{ minWidth: MIN_WIDTH }}>
+        {/* border-collapse だと sticky が効かないブラウザがあるため border-separate にする（spacing 0 で見た目は collapse と同じ） */}
+        <table className="w-full table-fixed text-[14px] text-ink border-separate border-spacing-0" style={{ minWidth: MIN_WIDTH }}>
           <colgroup>
             {FACT_COLUMNS.map((c) => (
               <col key={c.label} style={{ width: c.width }} />
