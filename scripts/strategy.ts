@@ -9,6 +9,7 @@ import { getSql } from "../lib/db";
 import { MODEL, STRATEGY_MODEL } from "../lib/agents/cost";
 import type { Effort } from "../lib/agents/llm";
 import { runStrategy, type RunOptions } from "../lib/agents/run";
+import { parsePropertyId } from "../lib/property";
 
 const MODEL_NAMES = { sonnet: STRATEGY_MODEL, haiku: MODEL } as const;
 
@@ -17,9 +18,9 @@ async function main() {
     allowPositionals: true,
     options: { model: { type: "string", default: "sonnet" }, effort: { type: "string", default: "medium" } },
   });
-  const propertyId = Number(positionals[0]);
+  const propertyId = parsePropertyId(positionals[0] ?? "");
   const usage = "例：npm run strategy -- 1、npm run strategy -- 1 --model sonnet --effort high";
-  if (!Number.isInteger(propertyId) || propertyId <= 0) throw new Error(`物件の番号を指定してください（${usage}）`);
+  if (propertyId === null) throw new Error(`物件の番号を指定してください（${usage}）`);
   if (values.model !== "sonnet" && values.model !== "haiku") throw new Error(`--model は sonnet か haiku です（${usage}）`);
   if (values.effort !== "medium" && values.effort !== "high") throw new Error(`--effort は medium か high です（${usage}）`);
   const options: RunOptions = { strategy: { model: MODEL_NAMES[values.model], effort: values.effort as Effort } };

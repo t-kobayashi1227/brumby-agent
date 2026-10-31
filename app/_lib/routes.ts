@@ -2,7 +2,7 @@
 
 import { GearIcon, ListIcon } from "../_components/icons";
 
-export interface PageDef {
+interface PageDef {
   href: string;
   title: string;
   /** 画面の中に自前の見出しを持つ（ヘッダーには題名を出さない） */
@@ -20,13 +20,13 @@ export const pages: PageDef[] = [
 export function findPage(pathname: string): PageDef | undefined {
   const exact = pages.find((p) => p.href === pathname);
   if (exact) return exact;
-  if (/^\/strategy\/[^/]+$/.test(pathname)) return { href: pathname, title: "販売戦略の詳細" };
+  if (/^\/strategy\/\d+$/.test(pathname)) return { href: pathname, title: "販売戦略の詳細" };
   if (/^\/properties\/\d+$/.test(pathname)) return { href: pathname, title: "物件情報の入力（登録した物件）" };
   if (/^\/properties\/\d+\/facts$/.test(pathname)) return { href: pathname, title: "事実シート" };
   return undefined;
 }
 
-export interface NavItem {
+interface NavItem {
   label: string;
   href: string;
   icon: (p: { className?: string }) => React.ReactNode;

@@ -1,13 +1,13 @@
 // 通学区域（市の「町名・地番等 → 小学校・中学校」の一覧表）の読み取りと、物件の住所との突き合わせ
-// 取り込み（scripts/ingest/jobs/d14-school-zones.ts）と事実シートの作成（段階3）で共通に使う。前の設計（legacy/lib/school-zones/parse.ts）から移した
+// 取り込み（scripts/ingest/jobs/d14-school-zones.ts）と事実シートの作成（段階3）で共通に使う
 
 /** 地番の範囲。ban は番（番地）の範囲、go は号の範囲（なければ番の全部） */
-export interface LotRange {
+interface LotRange {
   ban: [number, number];
   go?: [number, number][];
 }
 
-export interface TownCell {
+interface TownCell {
   town: string;
   chome: number | null;
   /** 「（東区）」のように町の区が書かれていれば、その区。「（一部江南区）」は区をまたぐので null */
@@ -27,7 +27,7 @@ export function normalizeWidth(text: string): string {
 const KANJI_DIGITS: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
 
 /** 「七」「十二」「二十」→ 数字。99まで */
-function kanjiToNumber(text: string): number | null {
+export function kanjiToNumber(text: string): number | null {
   const m = /^([一二三四五六七八九])?(十)?([一二三四五六七八九])?$/.exec(text);
   if (!m || text === "") return null;
   if (!m[2]) return m[1] && !m[3] ? KANJI_DIGITS[m[1]] : null;
@@ -101,7 +101,7 @@ export function parseLotText(raw: string): { scope: "全部" | "一部"; ranges:
   return { scope: "一部", ranges: ranges.length ? ranges : null };
 }
 
-export interface ParsedAddress {
+interface ParsedAddress {
   cityCode: string;
   ward: string | null;
   /** 市・区のあとの部分（町名から） */
@@ -122,7 +122,7 @@ export function parseAddress(address: string): ParsedAddress | null {
   return null;
 }
 
-export interface AddressDetail {
+interface AddressDetail {
   chome: number | null;
   ban: number | null;
   go: number | null;
@@ -154,7 +154,7 @@ export function parseAddressDetail(afterTown: string, hasChome: boolean, hasChom
 }
 
 /** 町名のあとに続いてよい文字（数字・漢数字・ハイフン・終わり）。「青山」が「青山新町」に当たらないようにする */
-export function townMatches(rest: string, town: string): boolean {
+function townMatches(rest: string, town: string): boolean {
   return rest.startsWith(town) && /^($|[\d一二三四五六七八九十-])/.test(rest.slice(town.length));
 }
 
@@ -208,7 +208,7 @@ function matchRow(row: ZoneRow, detail: AddressDetail): Match {
   return result;
 }
 
-export type ZoneResult =
+type ZoneResult =
   | { status: "decided"; school: string; rows: ZoneRow[] }
   | { status: "ambiguous"; candidates: string[]; rows: ZoneRow[] }
   | { status: "none" };

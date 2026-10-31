@@ -16,7 +16,7 @@ import { defineJob } from "../lib/runner";
 const KINDS: Record<string, string> = { supermarket: "スーパー", convenience: "コンビニ", chemist: "ドラッグストア" };
 
 /**
- * OSM のタグの誤りを名前で直す（docs/事実シートの修正_実装案.md 1.1）
+ * OSM のタグの誤りを名前で直す（docs/履歴/事実シートの修正_実装案.md 1.1）
  * convenience と付いていても、スーパーの名前ならスーパーにする（2026-10-30 に県内で「イオンスタイル上所」など3店）
  */
 const NAME_FIXES: { fclass: string; pattern: RegExp; kind: string }[] = [

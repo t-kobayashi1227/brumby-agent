@@ -8,7 +8,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { z } from "zod/v4";
 import { simulate } from "../calc/budget";
-import type { Sql } from "../db";
+import { serial, type Sql } from "../db";
 import { createFactSheet } from "../facts";
 import type { Fact, FactCategory, FactSheet } from "../facts/types";
 import { checkProgram, removeSentences, splitWhere, type CheckIssue } from "./checks";
@@ -17,16 +17,26 @@ import { callModel, DEFAULT_CALL, type CallOptions, type Effort } from "./llm";
 import { agentPrompt } from "./prompts";
 import { checkSchema, mainPart, mediaSchema, strategySchema, type AgentName, type CheckOutput, type MediaOutput, type StrategyOutput } from "./schemas";
 
-export type RunStage = "戦略" | "媒体" | "確認" | "金額の計算";
+type RunStage = "戦略" | "媒体" | "確認" | "金額の計算";
 
 export interface RunOptions {
   /** 戦略担当のモデルと考える量（比べるときに Haiku や high を試す） */
   strategy: { model: Model; effort: Effort };
 }
 
-export const DEFAULT_RUN: RunOptions = { strategy: { model: STRATEGY_MODEL, effort: "medium" } };
+/** 実行が成功したときに strategy_runs.result に保存する形（⑤の画面はこれを読む） */
+export interface StrategyResult {
+  fact_sheet_id: number;
+  構成: "3回";
+  戦略担当: RunOptions["strategy"];
+  戦略: StrategyOutput;
+  媒体: MediaOutput;
+  予算シミュレーション: ReturnType<typeof simulate>;
+}
 
-/** 確認担当。点検する側が見立てを読み違えないよう、戦略担当と同じ Sonnet 5.5 にする（docs/戦略の質を上げる修正案.md 4.1） */
+const DEFAULT_RUN: RunOptions = { strategy: { model: STRATEGY_MODEL, effort: "medium" } };
+
+/** 確認担当。点検する側が見立てを読み違えないよう、戦略担当と同じ Sonnet 5.5 にする（docs/履歴/戦略の質を上げる修正案.md 4.1） */
 const CHECK_CALL: CallOptions = { model: STRATEGY_MODEL, effort: "medium", maxTokens: 16000 };
 /** 戦略担当は分析と戦略を1回で作るので出力が大きい（修正案 4.2） */
 const STRATEGY_MAX_TOKENS = 64000;
@@ -46,17 +56,7 @@ export function factsOf(sheet: FactSheet, categories: FactCategory[]): Fact[] {
   return sheet.事実.filter((f) => categories.includes(f.id.split("-")[0] as FactCategory));
 }
 
-/** DB への書き込みを1つずつ順に行う（同時に投げると、プーラー経由で止まることがあるため。lib/facts/collect.ts の inOrder） */
-function serial() {
-  let tail: Promise<unknown> = Promise.resolve();
-  return <T>(task: () => Promise<T>): Promise<T> => {
-    const next = tail.then(task, task);
-    tail = next.catch(() => undefined);
-    return next;
-  };
-}
-
-export interface RunResult {
+interface RunResult {
   runId: number;
   factSheetId: number;
   costUsd: number;
@@ -189,7 +189,7 @@ export async function runStrategy(
         from agent_calls where run_id = ${runId}
       `,
     );
-    const result = { fact_sheet_id: factSheetId, 構成: "3回", 戦略担当: options.strategy, 戦略: main, 媒体: mediaOut, 予算シミュレーション: budget };
+    const result: StrategyResult = { fact_sheet_id: factSheetId, 構成: "3回", 戦略担当: options.strategy, 戦略: main, 媒体: mediaOut, 予算シミュレーション: budget };
     await db(
       () => sql`
         update strategy_runs set status = 'succeeded', result = ${sql.json(result as never)},

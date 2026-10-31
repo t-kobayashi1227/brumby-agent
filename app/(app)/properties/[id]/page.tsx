@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getSql } from "../../../../lib/db";
+import { getSql, inOrder } from "../../../../lib/db";
+import { parsePropertyId } from "../../../../lib/property";
 import { emptyState } from "../../../_lib/ui";
 import LocationMap from "../LocationMap";
 import PropertyForm, { type CompetitorValues, type PropertyValues, type TransportValues } from "../PropertyForm";
@@ -37,8 +38,8 @@ interface PropertyRow {
 export default async function PropertyPage({ params, searchParams }: PageProps<"/properties/[id]">) {
   const { id } = await params;
   const sp = await searchParams;
-  const propertyId = Number(id);
-  if (!Number.isInteger(propertyId) || propertyId <= 0) notFound();
+  const propertyId = parsePropertyId(id);
+  if (propertyId === null) notFound();
 
   const sql = getSql();
   const [p] = await sql<PropertyRow[]>`
@@ -49,12 +50,12 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
   `;
   if (!p) return <div className={emptyState}>物件 {propertyId} が見つかりません。</div>;
 
-  const [transports, competitors] = await Promise.all([
-    sql<TransportValues[]>`select mode, line, stop_name, walk_min from property_transports where property_id = ${propertyId} order by position`,
-    sql<(Omit<CompetitorValues, "building_sqm" | "land_sqm"> & { building_sqm: string | null; land_sqm: string | null })[]>`
+  const [transports, competitors] = await inOrder(
+    () => sql<TransportValues[]>`select mode, line, stop_name, walk_min from property_transports where property_id = ${propertyId} order by position`,
+    () => sql<(Omit<CompetitorValues, "building_sqm" | "land_sqm"> & { building_sqm: string | null; land_sqm: string | null })[]>`
       select price_man_yen, address, building_sqm, land_sqm, building_age from competitors where property_id = ${propertyId} order by position
     `,
-  ]);
+  );
 
   // numeric の列は文字で返るので、数にする
   const toNum = (v: string | null) => (v === null ? null : Number(v));

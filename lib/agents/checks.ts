@@ -1,4 +1,4 @@
-// 点検のプログラム部分（docs/設計まとめ.md「確認のチェック項目」の「プログラム」の4つと、docs/戦略の質を上げる修正案.md 5.1 の禁止語）
+// 点検のプログラム部分（docs/設計まとめ.md「確認のチェック項目」の「プログラム」の4つと、docs/履歴/戦略の質を上げる修正案.md 5.1 の禁止語）
 // 1. 文に付いた事実IDが、事実シートにすべてあるか → 作り直し
 // 2. IDのない文がないか → 外す（総合評価・価格の見方・方向性は1つしかないので外せず、作り直し）
 // 3. 「取得できず」の事実を根拠にしていないか → 作り直し
@@ -9,8 +9,8 @@
 import type { Fact } from "../facts/types";
 import type { MediaOutput, StrategyOutput } from "./schemas";
 
-export type CheckTarget = "戦略" | "媒体";
-export type CheckAction = "作り直し" | "外す" | "記録だけ" | "なし";
+type CheckTarget = "戦略" | "媒体";
+type CheckAction = "作り直し" | "外す" | "記録だけ" | "なし";
 
 export interface CheckIssue {
   target: CheckTarget;
@@ -38,7 +38,7 @@ const textOf = (item: object) =>
     .join(" ");
 
 /** 画面に出す文の一覧（戦略と媒体） */
-export function sentences(main: StrategyOutput, media: MediaOutput): Sentence[] {
+function sentences(main: StrategyOutput, media: MediaOutput): Sentence[] {
   const list = (target: CheckTarget, key: string, items: { evidence: string[] }[]) =>
     items.map((it, i) => ({ target, location: `${key}[${i}]`, text: textOf(it), evidence: it.evidence, removable: true }));
   const one = (location: string, it: { evidence: string[] }) => ({ target: "戦略" as const, location, text: textOf(it), evidence: it.evidence, removable: false });
@@ -59,7 +59,7 @@ export function sentences(main: StrategyOutput, media: MediaOutput): Sentence[] 
 const MEDIA_MIN = 3;
 const MEDIA_MAX = 6;
 
-export const BANNED_WORDS = ["必ず", "最適", "人気の", "査定", "保証", "徒歩"] as const;
+const BANNED_WORDS = ["必ず", "最適", "人気の", "査定", "保証", "徒歩"] as const;
 
 /**
  * 文に入っている禁止語。「徒歩○分」は、交通（T）の事実（物件資料の徒歩分）の値に同じ「徒歩○分」があれば通す

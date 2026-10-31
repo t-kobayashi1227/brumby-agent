@@ -4,6 +4,7 @@
 import { getSql } from "../lib/db";
 import { createFactSheet, makeFactSheet } from "../lib/facts";
 import type { Fact } from "../lib/facts/types";
+import { parsePropertyId } from "../lib/property";
 
 function show(facts: Fact[], summary: boolean) {
   console.table(facts.map((f) => (summary ? { id: f.id, 項目: f.項目, 状態: f.状態 } : { id: f.id, 項目: f.項目, 値: f.値 ?? "", 比較: f.比較 ?? "", 出典: f.出典, 時点: f.時点, 状態: f.状態 })));
@@ -13,8 +14,8 @@ function show(facts: Fact[], summary: boolean) {
 
 async function main() {
   const [idArg, ...flags] = process.argv.slice(2);
-  const propertyId = Number(idArg);
-  if (!Number.isInteger(propertyId) || propertyId <= 0) {
+  const propertyId = parsePropertyId(idArg ?? "");
+  if (propertyId === null) {
     console.error("物件の番号を指定してください（例：npm run facts -- 1）");
     process.exitCode = 1;
     return;

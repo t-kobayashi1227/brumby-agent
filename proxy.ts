@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Basic認証（設計書 D5）。テスト物件は秘密保持契約の対象なので、/api・画像・静的ファイルを含むすべてのリクエストを守る
+// Basic認証。テスト物件は秘密保持契約の対象なので、/api・画像・静的ファイルを含むすべてのリクエストを守る
 // Next.js 16 では middleware.ts は proxy.ts に改名された（node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md）
 // matcher を付けないので、Server Actions（各画面への POST）もここを通る
 //

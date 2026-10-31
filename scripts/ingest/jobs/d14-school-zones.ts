@@ -7,7 +7,6 @@ import { defineJob, insertRows } from "../lib/runner";
 // 市のホームページ（https://www.city.niigata.lg.jp/kosodate/gakko/sho_chu_school/tsugakukuiki/）の表を読み取る。CSV などは無く HTML だけ
 // 行政区の一覧（8区）→ 学校ページ（約110）の順にたどる。学校ページは「小学校／中学校」の組1つにつき1ページで、表は「町名」「地番等」の2列
 // 読んだページは data/raw/school-zones/ に保存する。市のサーバーに負担をかけないよう、1ページごとに間を空ける
-// 前の設計（legacy/scripts/ingest/jobs/niigata-school-zones.ts、2026-10-12）から移した
 
 const BASE = "https://www.city.niigata.lg.jp";
 const ROOT = "/kosodate/gakko/sho_chu_school/tsugakukuiki/sub02";

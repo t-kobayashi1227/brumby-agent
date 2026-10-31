@@ -3,8 +3,7 @@
 
 import { z } from "zod/v4";
 
-export const AGENTS = ["戦略", "媒体", "確認"] as const;
-export type AgentName = (typeof AGENTS)[number];
+export type AgentName = "戦略" | "媒体" | "確認";
 
 const evidence = z.array(z.string());
 const confidence = z.enum(["高", "中", "低"]);
@@ -12,7 +11,7 @@ const confidence = z.enum(["高", "中", "低"]);
 const sentence = z.object({ text: z.string(), evidence });
 
 /** 戦略の答えのうち、分析を除いた部分（媒体担当に渡す） */
-export const mainSchema = z.object({
+const mainSchema = z.object({
   summary: sentence,
   targets: z.array(
     z.object({

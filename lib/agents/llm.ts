@@ -24,7 +24,7 @@ export interface CallOptions {
 
 export const DEFAULT_CALL: CallOptions = { model: MODEL, effort: "medium", maxTokens: 16000 };
 
-export interface LlmResult<T> {
+interface LlmResult<T> {
   output: T | null;
   rawText: string;
   usage: Usage;

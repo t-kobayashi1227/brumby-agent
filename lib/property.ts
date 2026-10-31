@@ -7,6 +7,12 @@ export const TRANSPORT_MODES = ["電車", "バス"] as const;
 // 「内装一部」は 2026-10-25 に足した（クロスの張り替えだけ、など。小林さんと決定）
 export const RENOVATION_PARTS = ["キッチン", "浴室", "トイレ", "洗面", "内装全面", "内装一部", "外壁", "屋根", "その他"] as const;
 
+/** URL などから受け取った物件の番号を読む。正の整数でなければ null */
+export function parsePropertyId(raw: string | number): number | null {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
 /**
  * 間取りを、居室と納戸の数に分ける（設計まとめ「間取りとS（納戸）」）
  * 「4LDK+S」→ 居室4・納戸1、「3LDK+2S」→ 3・2、「4SLDK」→ 4・1、「3LDK」→ 3・0。読めない書き方は null

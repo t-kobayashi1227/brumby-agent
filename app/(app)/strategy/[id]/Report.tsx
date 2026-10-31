@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { MediaOutput, StrategyOutput } from "../../../../lib/agents/schemas";
+import type { StrategyResult } from "../../../../lib/agents/run";
 import { STRATEGY_TOPICS } from "../../../../lib/agents/schemas";
-import type { simulate } from "../../../../lib/calc/budget";
 import type { Fact } from "../../../../lib/facts/types";
 import { evidenceText, FIXED_CREDITS, type SourceRow } from "../../../../lib/report";
 import UnderlineTabs from "../../../_components/UnderlineTabs";
@@ -12,13 +11,6 @@ import MediaDonut, { MEDIA_COLORS } from "./MediaDonut";
 
 // ⑤販売戦略レポート（docs/設計まとめ.md「⑤画面の表示」）。「エリア分析・販売戦略・根拠データ」の3タブ
 // 画面では AI を動かさず、保存した結果（strategy_runs.result）と事実シートを出すだけ。金額は lib/calc/budget.ts で計算済み
-
-export interface StrategyResult {
-  fact_sheet_id: number;
-  戦略: StrategyOutput;
-  媒体: MediaOutput;
-  予算シミュレーション: ReturnType<typeof simulate>;
-}
 
 const TABS = [
   { key: "area", label: "エリア分析" },

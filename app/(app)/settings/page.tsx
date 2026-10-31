@@ -1,5 +1,5 @@
-import { getSql } from "../../../lib/db";
-import { todayJst } from "../../../lib/facts/collect";
+import { getSql, inOrder } from "../../../lib/db";
+import { todayJst } from "../../../lib/facts/format";
 import { card } from "../../_lib/ui";
 
 // 設定：計算に使っている前提値・ターゲット候補・媒体の一覧を見る画面（変更はできない）
@@ -35,21 +35,21 @@ function EmptyRow({ cols }: { cols: number }) {
 export default async function SettingsPage() {
   const sql = getSql();
   const today = todayJst();
-  const [assumptions, targets, media] = await Promise.all([
-    sql<{ key: string; value: string; unit: string; basis: string; as_of: string; effective_from: Date }[]>`
+  const [assumptions, targets, media] = await inOrder(
+    () => sql<{ key: string; value: string; unit: string; basis: string; as_of: string; effective_from: Date }[]>`
       select key, value, unit, basis, as_of, effective_from from (
         select distinct on (key) id, key, value, unit, basis, as_of, effective_from from assumptions
         where effective_from <= ${today}::date order by key, effective_from desc
       ) latest
       order by id
     `,
-    sql<{ id: number; name: string; representative_age: number; definition: string | null }[]>`
+    () => sql<{ id: number; name: string; representative_age: number; definition: string | null }[]>`
       select id, name, representative_age, definition from target_candidates order by id
     `,
-    sql<{ id: string; name: string; category: string; purpose: string; reach_ages: string }[]>`
+    () => sql<{ id: string; name: string; category: string; purpose: string; reach_ages: string }[]>`
       select id, name, category, purpose, reach_ages from media order by sort
     `,
-  ]);
+  );
 
   return (
     <div className="grid gap-4">

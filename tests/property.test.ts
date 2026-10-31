@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseLayout } from "../lib/property";
+import { parseLayout, parsePropertyId } from "../lib/property";
 
 describe("parseLayout", () => {
   it("居室と納戸（S）の数に分ける", () => {
@@ -18,5 +18,16 @@ describe("parseLayout", () => {
   it("読めない書き方は null", () => {
     expect(parseLayout("4LDK+書斎")).toBeNull();
     expect(parseLayout("")).toBeNull();
+  });
+});
+
+describe("parsePropertyId", () => {
+  it("正の整数だけを番号として読む", () => {
+    expect(parsePropertyId("12")).toBe(12);
+    expect(parsePropertyId(3)).toBe(3);
+    expect(parsePropertyId("0")).toBeNull();
+    expect(parsePropertyId("-1")).toBeNull();
+    expect(parsePropertyId("1.5")).toBeNull();
+    expect(parsePropertyId("abc")).toBeNull();
   });
 });

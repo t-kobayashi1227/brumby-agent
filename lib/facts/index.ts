@@ -3,14 +3,10 @@
 
 import type { Sql } from "../db";
 import { buildFacts } from "./build";
-import { collect, todayJst } from "./collect";
+import { collect } from "./collect";
+import { nowJstIso, todayJst } from "./format";
 import type { FactStepKey } from "./steps";
 import type { FactSheet } from "./types";
-
-/** 日本時間の ISO 形式（2026-10-23T15:30:00+09:00） */
-export function nowJstIso(now = new Date()): string {
-  return `${new Date(now.getTime() + 9 * 3600_000).toISOString().slice(0, 19)}+09:00`;
-}
 
 /** 事実シートを作る（保存はしない）。onStep は段階に入るたびに呼ぶ（lib/facts/steps.ts） */
 export async function makeFactSheet(

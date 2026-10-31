@@ -1,9 +1,9 @@
 // 媒体の配分（%）から金額を出す（docs/設計まとめ.md「予算シミュレーション」）
 // 0.1万円単位で四捨五入し、合計がずれたときは配分の最も大きい媒体で合わせる。AI は配分だけを出し、金額はここで計算する
 
-export const SIMULATION_TOTALS_MAN_YEN = [10, 20, 30] as const;
+const SIMULATION_TOTALS_MAN_YEN = [10, 20, 30] as const;
 
-export interface Allocation {
+interface Allocation {
   id: string;
   share: number;
   /** 万円（0.1万円単位） */
