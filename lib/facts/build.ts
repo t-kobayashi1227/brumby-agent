@@ -652,6 +652,21 @@ function assumption(c: Collected, key: string): AssumptionRow {
   return a;
 }
 
+/**
+ * 住み替えの頭金。「価格×自己資金比率」と「平均の自己資金の金額」の小さいほう。
+ * 比率は平均の価格の家を買った人の値なので、高い物件にそのまま掛けると頭金が平均の自己資金を大きく超えてしまう。
+ * 金額の前提値が無ければ比率を使う
+ */
+export function resaleDownPayment(priceManYen: number, ratio: AssumptionRow, amount?: AssumptionRow) {
+  const byRatio = (priceManYen * ratio.value) / 100;
+  if (amount && amount.value < byRatio) {
+    const text = `${formatNumber(amount.value)}万円`;
+    return { pct: (amount.value / priceManYen) * 100, row: amount, text, label: `住み替えで頭金${text}の場合（平均の自己資金）` };
+  }
+  const text = `${ratio.value}%`;
+  return { pct: ratio.value, row: ratio, text, label: `住み替えで頭金${text}の場合（平均の自己資金比率）` };
+}
+
 function buyerFacts(c: Collected): FactDraft[] {
   const out: FactDraft[] = [];
   const b = c.buyers;
@@ -667,7 +682,7 @@ function buyerFacts(c: Collected): FactDraft[] {
   ];
   const price = c.property.price_man_yen;
   const calcSrc = (row: AssumptionRow) => ({
-    出典: `ローン計算（頭金${la.downPaymentPct}%・返済負担率${la.repaymentRatioPct}%・元利均等）`,
+    出典: `ローン計算（頭金${la.downPaymentPct}%・返済負担率${la.repaymentRatioPct}%（無理のない目安。審査の上限ではない）・元利均等）`,
     時点: row.as_of,
   });
   const incomeBins = b.income.map((r) => ({ item: r.item, pct: r.value }));
@@ -712,23 +727,32 @@ function buyerFacts(c: Collected): FactDraft[] {
     );
   }
 
-  // 住み替えの候補は、今の家を売ったお金を頭金にするのが普通なので、二次取得者の自己資金比率を頭金にした返済も出す（2.4）
+  // 住み替えの候補は、今の家を売ったお金を頭金にするのが普通なので、二次取得者の自己資金を頭金にした返済も出す（2.4）
+  // 頭金は「価格×自己資金比率」と「平均の自己資金の金額」の小さいほう（高い物件で頭金が平均の自己資金を超えないように）
   // 前提値がまだ無い（マイグレーションを反映する前）ときは出さない
-  const resale = c.assumptions.find((r) => r.key === `住み替えの頭金の割合（${c.property.property_class}）`);
-  if (resale) {
-    const lr = { ...la, downPaymentPct: resale.value };
+  const cls = c.property.property_class;
+  const ratioRow = c.assumptions.find((r) => r.key === `住み替えの頭金の割合（${cls}）`);
+  if (ratioRow) {
+    const amountRow = c.assumptions.find((r) => r.key === `住み替えの頭金の金額（${cls}）`);
+    const down = resaleDownPayment(price, ratioRow, amountRow);
+    const lr = { ...la, downPaymentPct: down.pct };
+    const basis = down.row.basis ?? "前提値の表";
+    const src = basis.includes("三大都市圏") ? basis : `${basis}（三大都市圏）`;
     for (const t of c.targets.filter((t) => t.uses_resale_down_payment)) {
       out.push(
-        fact("B", `【${t.name}】の返済の目安（住み替えで頭金${resale.value}%の場合、返済期間${termOf(t)}年）`, `代表年齢${t.representative_age}歳。${repayment(lr, t.representative_age)}`, {
-          出典: `ローン計算（頭金${resale.value}%：${resale.basis ?? "前提値の表"}・完済${la.maxAgeAtPayoff}歳まで）・${shareSrc.出典}`,
-          時点: resale.as_of,
+        fact("B", `【${t.name}】の返済の目安（${down.label}、返済期間${termOf(t)}年）`, `代表年齢${t.representative_age}歳。${repayment(lr, t.representative_age)}`, {
+          出典: `ローン計算（頭金${down.text}：${src}・完済${la.maxAgeAtPayoff}歳まで）・${shareSrc.出典}`,
+          時点: down.row.as_of,
         }),
       );
     }
   }
 
   const list = (rows: StatRow[]) => rows.map((r) => `${r.item} ${formatPct(r.value)}`).join("、");
-  out.push(fact("B", `買主の年代（${b.segment}の世帯主）`, b.ages.length ? withRemainder(b.ages) : null, { 出典: b.agesSource ?? "住宅市場動向調査", 時点: b02 }));
+  const ages = b.ages.length ? listShares(b.ages) : null;
+  out.push(
+    fact("B", `買主の年代（${b.segment}の世帯主）`, ages?.text ?? null, { 出典: b.agesSource ?? "住宅市場動向調査", 時点: b02 }, ages?.needsCheck ? { 状態: "要確認" } : {}),
+  );
   out.push(
     fact("B", `物件を探した方法（${b.segment}、複数回答）`, b.search.length ? list(b.search) : null, { 出典: b.searchSource ?? "住宅市場動向調査", 時点: b02 }),
   );
@@ -748,14 +772,19 @@ function buyerFacts(c: Collected): FactDraft[] {
   return out;
 }
 
+/** 単一回答の内訳の合計が、丸めの誤差とみなせる幅（±%） */
+export const SHARE_SUM_TOLERANCE = 0.5;
+
 /**
- * 割合の内訳を並べ、合計が100%に足りなければ残りを「無回答など」として足す（AI が残りを勝手に読まないように）
- * 残りは 0.1% 単位で丸めて 0 より大きいときだけ（docs/履歴/事実シートの修正_実装案.md 2.5）
+ * 単一回答の割合の内訳を、原表の行のとおり並べる（無回答は原表にある行だけ。足りない分を無回答に変えない）
+ * 合計が 100% から丸めの幅を超えてずれていれば、カテゴリの抜けや書き写しの誤りかもしれないので「要確認」にする
+ * 複数回答の統計には使わない（docs/BRUMBY_根拠データ修正仕様.md F02）
  */
-export function withRemainder(rows: StatRow[]): string {
-  const list = rows.map((r) => `${r.item} ${formatPct(r.value)}`);
-  const rest = Math.round((100 - rows.reduce((s, r) => s + r.value, 0)) * 10) / 10;
-  return [...list, ...(rest > 0 ? [`無回答など ${formatPct(rest)}（100%から引いた残り）`] : [])].join("、");
+export function listShares(rows: StatRow[]): { text: string; needsCheck: boolean } {
+  const list = rows.map((r) => `${r.item} ${formatPct(r.value)}`).join("、");
+  const sum = Math.round(rows.reduce((s, r) => s + r.value, 0) * 10) / 10;
+  const needsCheck = Math.abs(sum - 100) > SHARE_SUM_TOLERANCE;
+  return { text: needsCheck ? `${list}（内訳の合計が${formatPct(sum)}で100%と差があるため要確認）` : list, needsCheck };
 }
 
 // ---- K 競合 ----

@@ -3,10 +3,11 @@
 
 export const MEDIA_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"];
 
-export default function MediaDonut({ items }: { items: { label: string; share: number }[] }) {
-  const size = 180;
-  const r = 70;
-  const stroke = 26;
+/** totalManYen があれば中央に総予算、なければ配分の合計を出す */
+export default function MediaDonut({ items, totalManYen = null }: { items: { label: string; share: number }[]; totalManYen?: number | null }) {
+  const size = 128;
+  const r = 50;
+  const stroke = 18;
   const c = 2 * Math.PI * r;
   const total = items.reduce((s, i) => s + i.share, 0) || 1;
   const gap = 2;
@@ -36,11 +37,11 @@ export default function MediaDonut({ items }: { items: { label: string; share: n
           );
         })}
       </g>
-      <text x="50%" y="48%" textAnchor="middle" className="fill-ink text-[13px] font-bold">
-        配分
+      <text x="50%" y="44%" textAnchor="middle" className="fill-muted text-[10px]">
+        {totalManYen !== null ? "総予算" : "配分"}
       </text>
-      <text x="50%" y="60%" textAnchor="middle" className="fill-muted text-[11px]">
-        合計 {items.reduce((s, i) => s + i.share, 0)}%
+      <text x="50%" y="60%" textAnchor="middle" className="fill-ink text-[15px] font-bold">
+        {totalManYen !== null ? `${totalManYen}万円` : `${items.reduce((s, i) => s + i.share, 0)}%`}
       </text>
     </svg>
   );

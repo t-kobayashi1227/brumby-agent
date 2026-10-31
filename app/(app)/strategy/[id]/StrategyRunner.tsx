@@ -2,10 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { btnPrimary, card } from "../../../_lib/ui";
+import { btnAction, btnSecondary, card } from "../../../_lib/ui";
 
 // 「戦略を作る」→ 進み具合を表示 → 完了したらレポートを読み直す（CLAUDE.md「エージェントの実行」）
 // 実行はサーバーで動き続けるので、画面を閉じても止まらない。開き直すと、実行中なら進み具合の表示に戻る
+// 物件の見出しカード（children）の右側にボタンを置き、進み具合や失敗はカードの下側に出す（提案資料の画面イメージに合わせる）
 
 const STAGES = [
   { key: "戦略", label: "事実を分析し、販売戦略を決める" },
@@ -25,7 +26,19 @@ export interface RunStatus {
   startedAt: string | null;
 }
 
-export default function StrategyRunner({ propertyId, initial, hasReport, hasLocation }: { propertyId: number; initial: RunStatus | null; hasReport: boolean; hasLocation: boolean }) {
+export default function StrategyRunner({
+  propertyId,
+  initial,
+  hasReport,
+  hasLocation,
+  children,
+}: {
+  propertyId: number;
+  initial: RunStatus | null;
+  hasReport: boolean;
+  hasLocation: boolean;
+  children: React.ReactNode;
+}) {
   const router = useRouter();
   const [run, setRun] = useState<RunStatus | null>(initial);
   const [error, setError] = useState<string | null>(null);
@@ -77,22 +90,30 @@ export default function StrategyRunner({ propertyId, initial, hasReport, hasLoca
   const seconds = run?.startedAt ? Math.max(0, Math.round((now - new Date(run.startedAt).getTime()) / 1000)) : null;
 
   return (
-    <div className={`${card} p-5 grid gap-3 print:hidden`}>
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="mr-auto">
-          <div className="text-[15px] font-bold text-ink">販売戦略の作成</div>
-          <div className="text-[11px] text-muted mt-0.5">
-            最新の事実シートから、AIエージェントが戦略を作ります。数分かかります。画面を閉じても作成は続きます
+    <div className={`${card} p-5 grid gap-3`}>
+      <div className="flex flex-wrap items-start gap-4">
+        <div className="mr-auto min-w-0">{children}</div>
+        <div className="flex flex-col items-end gap-1.5 print:hidden">
+          <div className="flex gap-2">
+            {hasReport && (
+              <button type="button" onClick={() => window.print()} className={btnSecondary}>
+                PDFで保存
+              </button>
+            )}
+            <button type="button" onClick={start} disabled={running || !hasLocation} className={btnAction}>
+              {running ? "作成しています…" : hasReport ? "戦略を作り直す" : "戦略を作る"}
+            </button>
           </div>
+          {!running && run?.status === "succeeded" && <div className="text-[12px] text-muted">前回の作成：AIの費用 ${run.costUsd.toFixed(4)}</div>}
         </div>
-        <button type="button" onClick={start} disabled={running || !hasLocation} className={`${btnPrimary} disabled:opacity-60`}>
-          {running ? "作成しています…" : hasReport ? "戦略を作り直す" : "戦略を作る"}
-        </button>
       </div>
-      {!hasLocation && <div className="text-xs text-[#b91c1c]">物件の位置がありません。物件の画面の地図でピンを置いてから作ってください。</div>}
+      {!hasReport && !running && (
+        <div className="text-[12px] text-muted print:hidden">最新の事実シートから、AIエージェントが戦略を作ります。数分かかります。画面を閉じても作成は続きます</div>
+      )}
+      {!hasLocation && <div className="print:hidden text-xs text-[#b91c1c]">物件の位置がありません。物件の画面の地図でピンを置いてから作ってください。</div>}
 
       {running && (
-        <ol className="grid gap-1.5 text-[13px]">
+        <ol className="grid gap-1.5 text-[15px] border-t border-divider pt-3 print:hidden">
           {STAGES.map((s, i) => {
             const status = starting ? (i === 0 ? "now" : "todo") : i < currentIndex ? "done" : i === currentIndex ? "now" : "todo";
             return (
@@ -110,18 +131,13 @@ export default function StrategyRunner({ propertyId, initial, hasReport, hasLoca
               </li>
             );
           })}
-          {seconds !== null && <li className="text-[11px] text-muted mt-1">経過 {seconds}秒（事実シートがまだ無いときは、先に作ります）</li>}
+          {seconds !== null && <li className="text-[12px] text-muted mt-1">経過 {seconds}秒（事実シートがまだ無いときは、先に作ります）</li>}
         </ol>
       )}
       {!running && run?.status === "failed" && (
-        <div className="rounded-md border border-[#f3c4c4] bg-[#fdecec] px-3 py-2 text-xs text-[#b91c1c]">前回の作成は失敗しました：{run.error ?? "理由不明"}</div>
+        <div className="print:hidden rounded-md border border-[#f3c4c4] bg-[#fdecec] px-3 py-2 text-xs text-[#b91c1c]">前回の作成は失敗しました：{run.error ?? "理由不明"}</div>
       )}
-      {!running && run?.status === "succeeded" && (
-        <div className="text-[11px] text-muted">
-          前回の作成：AIの費用 ${run.costUsd.toFixed(4)}
-        </div>
-      )}
-      {error && <div className="rounded-md border border-[#f3c4c4] bg-[#fdecec] px-3 py-2 text-xs text-[#b91c1c]">{error}</div>}
+      {error && <div className="print:hidden rounded-md border border-[#f3c4c4] bg-[#fdecec] px-3 py-2 text-xs text-[#b91c1c]">{error}</div>}
     </div>
   );
 }
