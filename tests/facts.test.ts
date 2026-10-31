@@ -5,14 +5,16 @@ import {
   buildFacts,
   depthLower,
   pricePerTsubo,
+  resaleDownPayment,
   selectMarket,
   selectSimilarMarket,
   sourceOf,
   type Collected,
   type DatasetInfo,
   type MarketTrade,
-  withRemainder,
+  listShares,
 } from "../lib/facts/build";
+import { sumMismatches } from "../scripts/ingest/jobs/buyers";
 import { groupBusStops, toD10TownName } from "../lib/facts/collect";
 import { formatChange, formatDistance, formatManYen1, formatNearby, median } from "../lib/facts/format";
 import { numberFacts, type Fact } from "../lib/facts/types";
@@ -165,6 +167,7 @@ function sample(overrides: Partial<Collected> = {}): Collected {
       { id: 5, key: "返済期間", value: 35, unit: "年", as_of: "2026-10" },
       { id: 6, key: "完済年齢の上限", value: 80, unit: "歳", as_of: "令和7年度" },
       { id: 7, key: "住み替えの頭金の割合（中古）", value: 49.2, unit: "%", as_of: "令和7年度", basis: "住宅市場動向調査 二次取得者の自己資金比率" },
+      { id: 8, key: "住み替えの頭金の金額（中古）", value: 1223, unit: "万円", as_of: "令和7年度", basis: "住宅市場動向調査 二次取得者の平均の自己資金（三大都市圏）" },
     ],
     targets: [
       { name: "若い夫婦", representative_age: 30, definition: "世帯主が20〜30代前半の夫婦" },
@@ -308,13 +311,42 @@ describe("バス停を停留所の名前でまとめる（groupBusStops）", () 
   });
 });
 
-describe("割合の内訳の残り（withRemainder）", () => {
-  it("合計が100%に足りなければ残りを足し、100%なら足さない", () => {
+describe("割合の内訳（listShares）", () => {
+  it("合計が足りなくても、残りを無回答として作らない。要確認にする", () => {
     const ages = [5.5, 22.9, 26.5, 25.7, 14.6].map((value, i) => ({ item: `区分${i + 1}`, value }));
-    expect(withRemainder(ages)).toBe("区分1 5.5%、区分2 22.9%、区分3 26.5%、区分4 25.7%、区分5 14.6%、無回答など 4.8%（100%から引いた残り）");
-    expect(withRemainder([{ item: "A", value: 60 }, { item: "B", value: 40 }])).toBe("A 60.0%、B 40.0%");
-    // 足し算の誤差（99.99…%）では足さない
-    expect(withRemainder([{ item: "A", value: 33.33 }, { item: "B", value: 33.33 }, { item: "C", value: 33.34 }])).toBe("A 33.3%、B 33.3%、C 33.3%");
+    const r = listShares(ages);
+    expect(r.text).not.toContain("無回答");
+    expect(r.text).toBe("区分1 5.5%、区分2 22.9%、区分3 26.5%、区分4 25.7%、区分5 14.6%（内訳の合計が95.2%で100%と差があるため要確認）");
+    expect(r.needsCheck).toBe(true);
+  });
+
+  it("中古戸建の年代（直した値）は合計100.0%で、そのまま並べる", () => {
+    const ages = [
+      { item: "30歳未満", value: 5.5 },
+      { item: "30代", value: 22.9 },
+      { item: "40代", value: 26.5 },
+      { item: "50代", value: 25.7 },
+      { item: "60歳以上", value: 19.4 },
+    ];
+    expect(listShares(ages)).toEqual({ text: "30歳未満 5.5%、30代 22.9%、40代 26.5%、50代 25.7%、60歳以上 19.4%", needsCheck: false });
+  });
+
+  it("原表にある無回答は残し、丸めの誤差（100.2%）は要確認にしない", () => {
+    const ages = [15.2, 47.1, 22.3, 8.1, 6.5, 1.0].map((value, i) => ({ item: i === 5 ? "無回答" : `区分${i + 1}`, value }));
+    expect(listShares(ages)).toEqual({ text: "区分1 15.2%、区分2 47.1%、区分3 22.3%、区分4 8.1%、区分5 6.5%、無回答 1.0%", needsCheck: false });
+    expect(listShares([{ item: "A", value: 33.33 }, { item: "B", value: 33.33 }, { item: "C", value: 33.34 }]).needsCheck).toBe(false);
+  });
+});
+
+describe("取り込み：単一回答の合計の確かめ（sumMismatches）", () => {
+  const row = (category: string, segment: string, value: number) => ({ dataset_id: "B02", category, segment, item: "x", value, unit: "%" });
+  it("単一回答で合計が合わない区分だけを挙げ、複数回答は確かめない", () => {
+    const rows = [
+      ...[5.5, 22.9, 26.5, 25.7, 14.6].map((v) => row("世帯主の年齢", "中古戸建を買った世帯", v)),
+      ...[15.2, 47.1, 22.3, 8.1, 6.5, 1.0].map((v) => row("世帯主の年齢", "分譲戸建を買った世帯", v)),
+      ...[63.2, 46.6, 22.9].map((v) => row("物件を探した方法", "中古戸建を買った世帯", v)),
+    ];
+    expect(sumMismatches(rows)).toEqual(["B02／世帯主の年齢／中古戸建を買った世帯：合計95.2%"]);
   });
 });
 
@@ -518,21 +550,46 @@ describe("事実シートの組み立て", () => {
     expect(terms).toEqual([
       "【若い夫婦・単身】の返済の目安（返済期間35年）",
       "【60歳以上】の返済の目安（返済期間15年）",
-      "【60歳以上】の返済の目安（住み替えで頭金49.2%の場合、返済期間15年）",
+      "【60歳以上】の返済の目安（住み替えで頭金49.2%の場合（平均の自己資金比率）、返済期間15年）",
     ]);
     expect(find(facts, "【若い夫婦・単身】の返済の目安（返済期間35年）").値).toMatch(/^代表年齢30・35歳。変動1.3%：月々約6.6万円・必要年収約318万円/);
     // 頭金49.2%：借入 2,480万円×0.508＝1,259.84万円を15年・1.3% → 月々約7.7万円、必要年収 約370万円
-    const resale = find(facts, "【60歳以上】の返済の目安（住み替えで頭金49.2%の場合、返済期間15年）");
+    const resale = find(facts, "【60歳以上】の返済の目安（住み替えで頭金49.2%の場合（平均の自己資金比率）、返済期間15年）");
     expect(resale.値).toMatch(/^代表年齢65歳。変動1.3%：月々約7.7万円・必要年収約370万円/);
     expect(resale).toMatchObject({ 時点: "令和7年度" });
-    expect(resale.出典).toMatch(/^ローン計算（頭金49.2%：住宅市場動向調査 二次取得者の自己資金比率/);
+    // 比率の前提値の根拠に「三大都市圏」が無くても、出典には書く
+    expect(resale.出典).toMatch(/^ローン計算（頭金49.2%：住宅市場動向調査 二次取得者の自己資金比率（三大都市圏）・完済80歳まで）/);
+    // 返済負担率は無理のない目安で、審査の上限ではないと出典に書く
+    expect(find(facts, "必要年収（変動1.3%）").出典).toBe("ローン計算（頭金10%・返済負担率25%（無理のない目安。審査の上限ではない）・元利均等）");
     // 前提値が無ければ住み替えの行は出さない
     const noResale = buildFacts(sample({ assumptions: sample().assumptions.filter((a) => !a.key.startsWith("住み替え")) }));
     expect(noResale.some((f) => f.項目.includes("住み替えで頭金"))).toBe(false);
     expect(find(facts, "ターゲット候補「60歳以上」の定義").値).toBe("定義は未設定（代表年齢65歳）");
     expect(find(facts, "Instagramの利用率（年代別）").値).toBe("20代83%、30代77%");
-    // 合計が100%に足りない分は「無回答など」として足す
-    expect(find(facts, "買主の年代（中古戸建を買った世帯の世帯主）").値).toBe("30代 22.9%、40代 26.5%、無回答など 50.6%（100%から引いた残り）");
+    // 合計が100%に足りなくても無回答は作らず、要確認にする
+    expect(find(facts, "買主の年代（中古戸建を買った世帯の世帯主）")).toMatchObject({
+      値: "30代 22.9%、40代 26.5%（内訳の合計が49.4%で100%と差があるため要確認）",
+      状態: "要確認",
+    });
+  });
+
+  it("買い手（B）：住み替えの頭金は「価格×比率」と「平均の自己資金の金額」の小さいほう", () => {
+    const ratio = sample().assumptions.find((a) => a.key === "住み替えの頭金の割合（中古）")!;
+    const amount = sample().assumptions.find((a) => a.key === "住み替えの頭金の金額（中古）")!;
+    // 安い物件：2,480万円×49.2%＝1,220万円 < 1,223万円 → 比率
+    expect(resaleDownPayment(2480, ratio, amount)).toMatchObject({ pct: 49.2, text: "49.2%", label: "住み替えで頭金49.2%の場合（平均の自己資金比率）" });
+    // 高い物件：5,980万円×49.2%＝約2,942万円 > 1,223万円 → 金額
+    const high = resaleDownPayment(5980, ratio, amount);
+    expect(high).toMatchObject({ text: "1,223万円", label: "住み替えで頭金1,223万円の場合（平均の自己資金）" });
+    expect(high.pct).toBeCloseTo((1223 / 5980) * 100, 10);
+    // 金額の前提値が無ければ比率
+    expect(resaleDownPayment(5980, ratio).text).toBe("49.2%");
+
+    const f = buildFacts(sample({ property: { ...sample().property, price_man_yen: 5980 } }));
+    const resale = find(f, "【60歳以上】の返済の目安（住み替えで頭金1,223万円の場合（平均の自己資金）、返済期間15年）");
+    // 借入 5,980−1,223＝4,757万円を15年・1.3%
+    expect(resale.値).toMatch(/^代表年齢65歳。変動1.3%：月々約29.1万円/);
+    expect(resale.出典).toMatch(/^ローン計算（頭金1,223万円：住宅市場動向調査 二次取得者の平均の自己資金（三大都市圏）・完済80歳まで）/);
   });
 
   it("競合（K）：入力のない値はそう書き、この物件との差を比較に入れる", () => {

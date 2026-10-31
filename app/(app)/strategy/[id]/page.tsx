@@ -7,7 +7,7 @@ import { formatNumber } from "../../../../lib/facts/format";
 import type { FactSheet } from "../../../../lib/facts/types";
 import { parsePropertyId } from "../../../../lib/property";
 import { sourceList, usedFactIds } from "../../../../lib/report";
-import { card, emptyState } from "../../../_lib/ui";
+import { emptyState } from "../../../_lib/ui";
 import Report from "./Report";
 import StrategyRunner, { type RunStatus } from "./StrategyRunner";
 
@@ -64,7 +64,7 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
     const { rows, credits } = sourceList(facts, usedFactIds(done.result.戦略, done.result.媒体), [...datasets]);
     report = (
       <>
-        <div className="text-[11px] text-muted mb-2">
+        <div className="text-[12px] text-muted mb-2">
           作成日時 {done.finished_at.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}・事実シート {done.content.作成日時} 時点
         </div>
         <Report result={done.result} facts={facts} sources={rows} credits={credits} mediaNames={Object.fromEntries(media.map((m) => [m.id, m.name]))} />
@@ -82,7 +82,8 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
         startedAt: latestRun.started_at?.toISOString() ?? null,
       }
     : null;
-  const access = transports.map((t) => `${t.line ? `${t.line} ` : ""}${t.mode === "バス" ? `「${t.stop_name}」停` : t.stop_name} 徒歩${t.walk_min}分`).join("／");
+  // 交通は入力された値（駅・バス停まで徒歩◯分）をそのまま出す。システムで計算した距離ではない
+  const access = transports.map((t) => `${t.line ? `${t.line} ` : ""}${t.mode === "バス" ? `「${t.stop_name}」停` : t.stop_name} 徒歩${t.walk_min}分`);
 
   return (
     <div className="grid gap-4">
@@ -99,24 +100,24 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
         </Link>
       </div>
 
-      <div className={`${card} p-5`}>
-        <div className="text-[11px] text-muted">物件ID {p.code}・{p.property_class}</div>
-        <div className="text-[18px] font-bold text-ink mt-0.5">{p.address}</div>
-        <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-[13px] text-body">
-          <span>
-            価格 <b className="text-ink text-[15px]">{formatNumber(p.price_man_yen)}万円</b>
-          </span>
-          <span>間取り {p.layout}</span>
-          <span>
-            建物 {Number(p.building_sqm)}㎡・土地 {Number(p.land_sqm)}㎡
-          </span>
-          <span>{p.building_age === 0 ? "新築" : `築${p.building_age}年`}</span>
-          <span>駐車 {p.parking}台</span>
-          {access && <span>{access}</span>}
+      <StrategyRunner propertyId={propertyId} initial={initial} hasReport={!!done} hasLocation={p.has_location}>
+        <div className="text-[12px] text-muted">
+          物件ID {p.code}・{p.property_class}・{p.building_age === 0 ? "新築" : `築${p.building_age}年`}
         </div>
-      </div>
-
-      <StrategyRunner propertyId={propertyId} initial={initial} hasReport={!!done} hasLocation={p.has_location} />
+        <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3">
+          <h1 className="text-[20px] font-bold text-ink">
+            {p.address} {p.layout}
+          </h1>
+          <span className="text-[24px] font-bold text-primary">{formatNumber(p.price_man_yen)}万円</span>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {[`土地 ${Number(p.land_sqm)}㎡`, `建物 ${Number(p.building_sqm)}㎡`, `駐車場 ${p.parking}台`, ...access].map((c) => (
+            <span key={c} className="rounded bg-subtle border border-line px-2 py-0.5 text-[12px] text-body">
+              {c}
+            </span>
+          ))}
+        </div>
+      </StrategyRunner>
       {report}
     </div>
   );
