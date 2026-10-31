@@ -43,3 +43,5 @@ next-env.d.ts
 
 # ダウンロードした元データ（docs/実装の進め方.md 段階2）
 /data/raw/
+# 戦略の答えの書き出し（scripts/strategy.ts。テスト物件は秘密保持契約の対象）
+/data/out/

@@ -1,8 +1,9 @@
 // ④戦略の作成（docs/設計まとめ.md「処理の流れ」）
-// 1. 物件・立地・価格・買い手を同時に動かす（お互いの答えは見ない）
-// 2. メインが4つの答えと事実シート全体から戦略を決める  3. 媒体がメインのターゲットから媒体と配分を決める
-// 4. 点検：プログラムで形を見て、確認エージェントが中身を見る  5. 問題のある文は、メインか媒体に1回だけ作り直させる（PoC では止めている：REBUILD）
-// 6. 配分から金額を計算する。入力・出力・費用・点検の結果は、すべて DB（strategy_runs・agent_calls・check_results）に残す
+// 1. 戦略（Sonnet 5.5）：事実シート全体から、分析（事実 → 買い手にとっての意味 → 販売での使い方）と戦略を1回で作る
+// 2. 媒体（Haiku 5.5）：戦略のターゲットと P・B・C の事実から媒体と配分を決める
+// 3. 点検：プログラムで形を見て（IDのない文はここで外す）、確認（Sonnet 5.5）が中身を見る
+//    PoC では作り直さない。点検が求める扱い（作り直し・外す・記録だけ）のまま check_results に残す
+// 4. 配分から金額を計算する。入力・出力・費用・点検の結果は、すべて DB（strategy_runs・agent_calls・check_results）に残す
 
 import type Anthropic from "@anthropic-ai/sdk";
 import type { z } from "zod/v4";
@@ -10,41 +11,35 @@ import { simulate } from "../calc/budget";
 import type { Sql } from "../db";
 import { createFactSheet } from "../facts";
 import type { Fact, FactCategory, FactSheet } from "../facts/types";
-import { checkProgram, removeSentences, splitWhere, type CheckIssue, type CheckTarget } from "./checks";
-import { MODEL } from "./cost";
-import { callModel } from "./llm";
-import { agentPrompt, rebuildMessage } from "./prompts";
-import {
-  analysisSchema,
-  checkSchema,
-  mainSchema,
-  mediaSchema,
-  type AgentName,
-  type AnalysisAgent,
-  type AnalysisOutput,
-  type CheckOutput,
-  type MainOutput,
-  type MediaOutput,
-} from "./schemas";
+import { checkProgram, removeSentences, splitWhere, type CheckIssue } from "./checks";
+import { STRATEGY_MODEL, type Model } from "./cost";
+import { callModel, DEFAULT_CALL, type CallOptions, type Effort } from "./llm";
+import { agentPrompt } from "./prompts";
+import { checkSchema, mainPart, mediaSchema, strategySchema, type AgentName, type CheckOutput, type MediaOutput, type StrategyOutput } from "./schemas";
 
-export type RunStage = "分析" | "メイン" | "媒体" | "確認" | "作り直し" | "金額の計算";
+export type RunStage = "戦略" | "媒体" | "確認" | "金額の計算";
 
-/** 4つの分析エージェントに渡す事実の分類（設計まとめ「エージェントと渡す事実」） */
-const ANALYSIS_FACTS: Record<AnalysisAgent, FactCategory[]> = {
-  物件: ["P", "M"],
-  立地: ["R", "S", "L", "T", "H"],
-  価格: ["P", "M", "K"],
-  買い手: ["P", "A", "B"],
-};
+export interface RunOptions {
+  /** 戦略担当のモデルと考える量（比べるときに Haiku や high を試す） */
+  strategy: { model: Model; effort: Effort };
+}
+
+export const DEFAULT_RUN: RunOptions = { strategy: { model: STRATEGY_MODEL, effort: "medium" } };
+
+/** 確認担当。点検する側が見立てを読み違えないよう、戦略担当と同じ Sonnet 5.5 にする（docs/戦略の質を上げる修正案.md 4.1） */
+const CHECK_CALL: CallOptions = { model: STRATEGY_MODEL, effort: "medium", maxTokens: 16000 };
+/** 戦略担当は分析と戦略を1回で作るので出力が大きい（修正案 4.2） */
+const STRATEGY_MAX_TOKENS = 64000;
+
 const MEDIA_FACTS: FactCategory[] = ["P", "B", "C"];
 
 /** 確認エージェントの点検項目の番号（指示文の 1〜5） */
 const AI_CHECK_NAMES: Record<number, string> = {
-  1: "数字が事実の値と一致しない",
-  2: "事実からその内容が言えない",
-  3: "事実で支えられない言い切り",
+  1: "数字が事実と合わない",
+  2: "名前が事実にない",
+  3: "見立てが事実と矛盾する",
   4: "災害を軽く書いている",
-  5: "価格を約束する表現",
+  5: "価格や売れることの約束",
 };
 
 export function factsOf(sheet: FactSheet, categories: FactCategory[]): Fact[] {
@@ -68,17 +63,12 @@ export interface RunResult {
   inputTokens: number;
   outputTokens: number;
   calls: number;
-  checks: { round1: number; round2: number | null };
+  /** 点検で見つかった問題の件数（プログラムと確認） */
+  checks: number;
 }
 
 /** 実行中のまま、これより長く経った実行は、止まったものとみなす（サーバーが途中で止まったときなど） */
 const STALE_MINUTES = 15;
-
-/**
- * 問題のある文を作り直すか。PoC では時間を縮めるため作り直さない（2026-10-26 小林さんと決定。1回の実行が約2.3分→約1.5分）
- * 点検は今までどおり行い、結果は check_results に残す（作り直さないので action は「なし」）。IDのない文を外すのは続ける
- */
-export const REBUILD = false;
 
 /**
  * 戦略を作る。onStarted は strategy_runs の行を作ったときに呼ぶ（画面は、その id で進み具合を読みに行く）
@@ -89,6 +79,7 @@ export async function runStrategy(
   propertyId: number,
   onStage?: (stage: RunStage) => void,
   onStarted?: (runId: number) => void,
+  options: RunOptions = DEFAULT_RUN,
 ): Promise<RunResult> {
   const db = serial();
 
@@ -107,30 +98,31 @@ export async function runStrategy(
   const [active] = await sql`select 1 from strategy_runs where property_id = ${propertyId} and status in ('queued', 'running')`;
   if (active) throw new Error("この物件は、いま戦略を作っている途中です。終わるまで待ってください");
   const [run] = await sql<{ id: string }[]>`
-    insert into strategy_runs (property_id, fact_sheet_id, status, stage, started_at)
-    values (${propertyId}, ${factSheetId}, 'running', '分析', now()) returning id
+    insert into strategy_runs (property_id, fact_sheet_id, form, status, stage, started_at)
+    values (${propertyId}, ${factSheetId}, '3回', 'running', '戦略', now()) returning id
   `;
   const runId = Number(run.id);
   onStarted?.(runId);
+  onStage?.("戦略");
   const setStage = (stage: RunStage) => {
     onStage?.(stage);
     return db(() => sql`update strategy_runs set stage = ${stage} where id = ${runId}`);
   };
 
   /** エージェントを1回呼び、agent_calls に入力・出力・トークン数・費用を残す。失敗したら例外 */
-  const call = async <S extends z.ZodType>(agent: AgentName, attempt: 1 | 2, input: unknown, schema: S, extra: Anthropic.MessageParam[] = []) => {
+  const call = async <S extends z.ZodType>(agent: AgentName, input: unknown, schema: S, callOptions: CallOptions = DEFAULT_CALL) => {
     const prompt = agentPrompt(agent);
-    const messages: Anthropic.MessageParam[] = [{ role: "user", content: JSON.stringify(input) }, ...extra];
+    const messages: Anthropic.MessageParam[] = [{ role: "user", content: JSON.stringify(input) }];
     const [row] = await db(
       () => sql<{ id: string }[]>`
-        insert into agent_calls (run_id, agent, attempt, model, prompt_file, prompt_sha256, input)
-        values (${runId}, ${agent}, ${attempt}, ${MODEL}, ${prompt.file}, ${prompt.sha256}, ${sql.json({ messages } as never)})
+        insert into agent_calls (run_id, agent, attempt, model, effort, prompt_file, prompt_sha256, input)
+        values (${runId}, ${agent}, 1, ${callOptions.model}, ${callOptions.effort}, ${prompt.file}, ${prompt.sha256}, ${sql.json({ messages } as never)})
         returning id
       `,
     );
     const callId = Number(row.id);
     try {
-      const r = await callModel(prompt.system, messages, schema);
+      const r = await callModel(prompt.system, messages, schema, callOptions);
       await db(
         () => sql`
           update agent_calls set
@@ -143,7 +135,7 @@ export async function runStrategy(
         `,
       );
       if (r.error || r.output === null) throw new Error(`${agent}エージェント：${r.error}`);
-      return { output: r.output, rawText: r.rawText, callId, messages };
+      return { output: r.output, callId };
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await db(() => sql`update agent_calls set status = 'failed', error = coalesce(error, ${message}), finished_at = coalesce(finished_at, now()) where id = ${callId}`);
@@ -151,80 +143,39 @@ export async function runStrategy(
     }
   };
 
-  const saveChecks = (round: 1 | 2, issues: CheckIssue[], checker: "プログラム" | "AI", agentCallId: number | null) =>
+  const saveChecks = (issues: CheckIssue[], checker: "プログラム" | "AI", agentCallId: number | null) =>
     db(async () => {
       for (const i of issues) {
         await sql`
           insert into check_results (run_id, agent_call_id, round, checker, target, location, check_name, problem, action)
-          values (${runId}, ${agentCallId}, ${round}, ${checker}, ${i.target}, ${i.location}, ${i.check_name}, ${i.problem}, ${i.action})
+          values (${runId}, ${agentCallId}, 1, ${checker}, ${i.target}, ${i.location}, ${i.check_name}, ${i.problem}, ${i.action})
         `;
       }
     });
 
-  const aiIssues = (out: CheckOutput, action: CheckIssue["action"]): CheckIssue[] =>
-    out.issues.map((i) => ({ ...splitWhere(i.where), check_name: AI_CHECK_NAMES[i.check] ?? `点検${i.check}`, problem: i.problem, action }));
+  const aiIssues = (out: CheckOutput): CheckIssue[] =>
+    out.issues.map((i) => ({ ...splitWhere(i.where), check_name: AI_CHECK_NAMES[i.check] ?? `点検${i.check}`, problem: i.problem, action: "作り直し" }));
 
   try {
-    // 1. 4つの分析（同時）
-    const analysisAgents: AnalysisAgent[] = ["物件", "立地", "価格", "買い手"];
-    const analyses = Object.fromEntries(
-      await Promise.all(
-        analysisAgents.map(async (agent) => {
-          const r = await call(agent, 1, { 距離の種類: sheet.距離の種類, 事実: factsOf(sheet, ANALYSIS_FACTS[agent]) }, analysisSchema(agent));
-          return [agent, r.output as AnalysisOutput] as const;
-        }),
-      ),
-    ) as Record<AnalysisAgent, AnalysisOutput>;
+    // 1. 戦略（事実シート全体）
+    const strategyCall = await call("戦略", { 事実シート: sheet }, strategySchema, { ...options.strategy, maxTokens: STRATEGY_MAX_TOKENS });
+    let main: StrategyOutput = strategyCall.output;
 
-    // 2. メイン（事実シート全体と4つの分析）
-    await setStage("メイン");
-    const mainInput = { 事実シート: sheet, 担当の分析: analyses };
-    const mainCall = await call("メイン", 1, mainInput, mainSchema);
-    let main: MainOutput = mainCall.output;
-
-    // 3. 媒体（P・B・C とメインの答え）
+    // 2. 媒体（P・B・C と、戦略のうち分析を除いた部分）
     await setStage("媒体");
-    const mediaInput = (m: MainOutput) => ({ 距離の種類: sheet.距離の種類, 事実: factsOf(sheet, MEDIA_FACTS), メインの答え: m });
-    const mediaCall = await call("媒体", 1, mediaInput(main), mediaSchema);
+    const mediaCall = await call("媒体", { 距離の種類: sheet.距離の種類, 事実: factsOf(sheet, MEDIA_FACTS), メインの答え: mainPart(main) }, mediaSchema);
     let mediaOut: MediaOutput = mediaCall.output;
 
-    // 4. 点検（1回目）：プログラム → 確認エージェント。IDのない文はここで外す
+    // 3. 点検：プログラム → 確認エージェント。IDのない文はここで外す
     await setStage("確認");
-    const program1 = checkProgram(main, mediaOut, sheet.事実, mediaIds).map((i) =>
-      REBUILD || i.action !== "作り直し" ? i : { ...i, action: "なし" as const },
-    );
-    await saveChecks(1, program1, "プログラム", null);
-    ({ main, media: mediaOut } = removeSentences(main, mediaOut, program1));
-    const check1 = await call("確認", 1, { 事実シート: sheet, 点検する文章: { メイン: main, 媒体: mediaOut } }, checkSchema);
-    const ai1 = aiIssues(check1.output, REBUILD ? "作り直し" : "なし");
-    await saveChecks(1, ai1, "AI", check1.callId);
+    const program = checkProgram(main, mediaOut, sheet.事実, mediaIds);
+    await saveChecks(program, "プログラム", null);
+    ({ main, media: mediaOut } = removeSentences(main, mediaOut, program));
+    const check = await call("確認", { 事実シート: sheet, 点検する文章: { 戦略: main, 媒体: mediaOut } }, checkSchema, CHECK_CALL);
+    const ai = aiIssues(check.output);
+    await saveChecks(ai, "AI", check.callId);
 
-    // 5. 作り直し（1回だけ）。作り直した後に残った問題は、警告なしで出し、点検の結果だけ DB に残す
-    const toRebuild = [...program1, ...ai1].filter((i) => i.action === "作り直し");
-    let round2: number | null = null;
-    if (toRebuild.length > 0) {
-      await setStage("作り直し");
-      const problemsFor = (t: CheckTarget) => toRebuild.filter((i) => i.target === t).map((i) => `${i.location}：${i.problem}`);
-      const rebuild = async (t: CheckTarget, input: unknown, prev: { rawText: string }) => {
-        const extra: Anthropic.MessageParam[] = [
-          { role: "assistant", content: prev.rawText },
-          { role: "user", content: rebuildMessage(problemsFor(t)) },
-        ];
-        return t === "メイン" ? (await call("メイン", 2, input, mainSchema, extra)).output : (await call("媒体", 2, input, mediaSchema, extra)).output;
-      };
-      if (problemsFor("メイン").length) main = (await rebuild("メイン", mainInput, mainCall)) as MainOutput;
-      if (problemsFor("媒体").length) mediaOut = (await rebuild("媒体", mediaInput(mainCall.output), mediaCall)) as MediaOutput;
-
-      const program2 = checkProgram(main, mediaOut, sheet.事実, mediaIds).map((i) => ({ ...i, action: i.action === "外す" ? i.action : ("なし" as const) }));
-      await saveChecks(2, program2, "プログラム", null);
-      ({ main, media: mediaOut } = removeSentences(main, mediaOut, program2));
-      const check2 = await call("確認", 2, { 事実シート: sheet, 点検する文章: { メイン: main, 媒体: mediaOut } }, checkSchema);
-      const ai2 = aiIssues(check2.output, "なし");
-      await saveChecks(2, ai2, "AI", check2.callId);
-      round2 = program2.length + ai2.length;
-    }
-
-    // 6. 配分から金額（10万・20万・30万円と、①の総額）
+    // 4. 配分から金額（10万・20万・30万円と、①の総額）
     await setStage("金額の計算");
     const budget = simulate(
       mediaOut.media.map((m) => ({ id: m.id, share: m.share })),
@@ -238,7 +189,7 @@ export async function runStrategy(
         from agent_calls where run_id = ${runId}
       `,
     );
-    const result = { fact_sheet_id: factSheetId, 分析: analyses, メイン: main, 媒体: mediaOut, 予算シミュレーション: budget };
+    const result = { fact_sheet_id: factSheetId, 構成: "3回", 戦略担当: options.strategy, 戦略: main, 媒体: mediaOut, 予算シミュレーション: budget };
     await db(
       () => sql`
         update strategy_runs set status = 'succeeded', result = ${sql.json(result as never)},
@@ -253,7 +204,7 @@ export async function runStrategy(
       inputTokens: totals.input_tokens,
       outputTokens: totals.output_tokens,
       calls: totals.calls,
-      checks: { round1: program1.length + ai1.length, round2 },
+      checks: program.length + ai.length,
     };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

@@ -30,7 +30,7 @@
 | `land_prices` | 地価公示・地価調査 | 事実 M | 段階2 |
 | `reference_stats` | 買い手・媒体の統計（年収分布、買主の年代、媒体の利用率） | 事実 B | 段階2 |
 | `assumptions` | 前提値（金利・頭金・返済負担率など。項目・値・根拠・時点・適用開始日） | 買い手・ローンの前提 | 作成時に6件入る |
-| `target_candidates` | ターゲット候補6つと代表年齢 | ターゲット候補 | 作成時に6件入る |
+| `target_candidates` | ターゲット候補6つと代表年齢。`uses_resale_down_payment` は住み替えの頭金での返済も出す候補（50代の住み替え・60歳以上） | ターゲット候補 | 作成時に6件入る |
 | `media` | 媒体一覧 C-01〜C-16 | 媒体の選び方 | 作成時に16件入る |
 | `properties` | 物件（①の15項目のうち交通・競合以外） | ①入力項目 | 段階5の画面から |
 | `property_transports` | 交通（最大2つ） | ①交通 | 段階5の画面から |
@@ -110,11 +110,12 @@ properties ─┬─ property_transports（最大2）
 
 ### strategy_runs / agent_calls / check_results
 
-- `npm run strategy -- <物件の番号>` で、最新の事実シートから7つのエージェントを動かします（`lib/agents/run.ts`）。指示文は `prompts/`（設計まとめと一字一句同じことを `tests/agents.test.ts` で確かめます）、作り直しの依頼文は `prompts/rebuild.txt` です。
-- `strategy_runs.result` は `{fact_sheet_id, 分析, メイン, 媒体, 予算シミュレーション}` です。IDのない文は外した後の形です。
+- `npm run strategy -- <物件の番号>` で、最新の事実シートから戦略・媒体・確認の3つのエージェントを動かします（`lib/agents/run.ts`）。指示文は `prompts/`（設計まとめと一字一句同じことを `tests/agents.test.ts` で確かめます）です。
+- `strategy_runs.result` は `{fact_sheet_id, 構成, 戦略担当, 戦略, 媒体, 予算シミュレーション}` です。IDのない文は外した後の形です。
+- `strategy_runs.form` は、どの形で作ったかです。2026-10-31 からは「3回」（戦略担当1体）だけで、画面も「3回」の結果だけを出します。それより前の「7回」（4つの分析＋メイン）の結果は `{fact_sheet_id, 分析, メイン, 媒体, 予算シミュレーション}` の形で残っています。
 
 - 同じ物件で同時に動く実行は1つだけです（`strategy_runs_one_active`）。
-- `agent_calls.attempt` は、1が最初の呼び出し、2が作り直しです（作り直しは1回だけ）。
+- `agent_calls.attempt` は、1が最初の呼び出し、2が作り直しです。今は作り直さないので、すべて1です。`agent_calls.effort` は呼び出しごとの考える量です。
 - `prompt_sha256` は指示文の中身のハッシュです。指示文を直したとき、どの版で動かしたかが分かります。
 - 費用は呼び出しごとに `agent_calls.cost_usd`、合計を `strategy_runs.cost_usd` に入れます。
 

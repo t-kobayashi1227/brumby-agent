@@ -1,34 +1,17 @@
 // エージェントが返す JSON の形（docs/設計まとめ.md「出力の形」「エージェントの指示文」）
-// structured outputs（output_config.format）で、この形以外を返せないようにする。kind などの選択肢も指示文のとおりにしぼる
+// structured outputs（output_config.format）で、この形以外を返せないようにする。topic などの選択肢も指示文のとおりにしぼる
 
 import { z } from "zod/v4";
 
-export const AGENTS = ["物件", "立地", "価格", "買い手", "メイン", "媒体", "確認"] as const;
+export const AGENTS = ["戦略", "媒体", "確認"] as const;
 export type AgentName = (typeof AGENTS)[number];
-export type AnalysisAgent = "物件" | "立地" | "価格" | "買い手";
 
 const evidence = z.array(z.string());
 const confidence = z.enum(["高", "中", "低"]);
 
-/** 分析エージェントの kind（各指示文の「kind は…のいずれか」） */
-export const ANALYSIS_KINDS: Record<AnalysisAgent, readonly [string, ...string[]]> = {
-  物件: ["強み", "弱み", "合う暮らし"],
-  立地: ["暮らしの良い点", "不便な点", "災害の注意", "向く人"],
-  価格: ["価格の位置づけ", "売れやすさ", "注意点"],
-  買い手: ["買える見込み", "エリアとの合い方"],
-};
-
-export function analysisSchema(agent: AnalysisAgent) {
-  return z.object({
-    agent: z.literal(agent),
-    findings: z.array(z.object({ kind: z.enum(ANALYSIS_KINDS[agent]), text: z.string(), evidence, confidence })),
-    unknown: z.array(z.string()),
-  });
-}
-export type AnalysisOutput = z.infer<ReturnType<typeof analysisSchema>>;
-
 const sentence = z.object({ text: z.string(), evidence });
 
+/** 戦略の答えのうち、分析を除いた部分（媒体担当に渡す） */
 export const mainSchema = z.object({
   summary: sentence,
   targets: z.array(
@@ -55,6 +38,30 @@ export const mainSchema = z.object({
   direction: sentence,
 });
 export type MainOutput = z.infer<typeof mainSchema>;
+
+/** 戦略担当の答え。分析（事実 → 買い手にとっての意味 → 販売での使い方）と戦略を1回で作る。分析を先に書かせる */
+export const STRATEGY_TOPICS = ["物件", "立地", "価格", "買い手", "組み合わせ", "その他"] as const;
+export const strategySchema = z.object({
+  analysis: z.array(
+    z.object({
+      topic: z.enum(STRATEGY_TOPICS),
+      // 事実 → 買い手にとっての意味 → 販売での使い方
+      fact: z.string(),
+      meaning: z.string(),
+      use: z.string(),
+      evidence,
+      confidence,
+    }),
+  ),
+  unknown: z.array(z.string()),
+  ...mainSchema.shape,
+});
+export type StrategyOutput = z.infer<typeof strategySchema>;
+
+/** 戦略の答えから、媒体担当に渡す部分（分析を除いた戦略）だけを取り出す */
+export function mainPart(strategy: StrategyOutput): MainOutput {
+  return mainSchema.parse(strategy);
+}
 
 export const mediaSchema = z.object({
   media: z.array(

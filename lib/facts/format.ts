@@ -1,8 +1,11 @@
 // 事実の「値」の書き方。距離はすべて直線距離で「直線」と書き、徒歩分には直さない（CLAUDE.md）
 
-/** 直線距離：1km未満は10m単位（直線650m）、1km以上は0.1km単位（直線1.1km） */
+/**
+ * 直線距離：1km未満は10m単位（直線650m）、1km以上は0.1km単位（直線1.1km）
+ * 1km未満は丸めても1000mにせず990mにする。1km以内の一覧に「直線1000m」と出て境目の外に見えないように（docs/事実シートの修正_実装案.md 1.5）
+ */
 export function formatDistance(meters: number): string {
-  if (meters < 1000) return `直線${Math.round(meters / 10) * 10}m`;
+  if (meters < 1000) return `直線${Math.min(990, Math.round(meters / 10) * 10)}m`;
   return `直線${(Math.round(meters / 100) / 10).toFixed(1)}km`;
 }
 

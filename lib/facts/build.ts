@@ -2,7 +2,7 @@
 // collect.ts が DB から集めた値（Collected）を、事実（項目・値・比較・出典・時点・状態）に直す。DB には触れない
 // 計算（距離・件数・割合・返済額・相場比）はここと lib/calc で済ませ、結果だけを「値」に入れる。取れなかった値は「取得できず」
 
-import { calcLoan, shareAboveIncome, type LoanAssumptions } from "../calc/loan";
+import { calcLoan, loanTerm, shareAboveIncome, type LoanAssumptions } from "../calc/loan";
 import {
   formatChange,
   formatDistance,
@@ -106,7 +106,7 @@ export interface NearbyKindInput {
   label: string;
   within1km: NearbyItem[];
   nearest3km: NearbyItem | null;
-  /** 区内の町の平均件数。無い種類（診療科）は null */
+  /** 区内の町の平均件数。計算していなければ null */
   wardAverage: number | null;
   datasetIds: string[];
 }
@@ -115,13 +115,19 @@ export interface StationInput {
   name: string;
   lines: string[];
   distance_m: number;
-  /** 1日あたりの乗降客数。0 の駅は「公表なし」、S12 に無い駅は null（データなし） */
+  /** 1日あたりの乗降客数。0 の駅は「公表なし」、S12 に無い駅は null（取得できず） */
   passengers: number | "公表なし" | null;
+}
+
+/** バス停（停留所の名前でまとめたもの）。系統数は事業者ごとの点の合計 */
+export interface BusStopInput extends NearbyItem {
+  routes: number | null;
+  operators: string[];
 }
 
 export interface BusInput {
   within1km: NearbyItem[];
-  nearest: (NearbyItem & { routes: number | null }) | null;
+  nearest: BusStopInput | null;
   wardAverage: number | null;
 }
 
@@ -177,12 +183,16 @@ export interface AssumptionRow {
   value: number;
   unit: string;
   as_of: string;
+  /** 根拠（例：住宅市場動向調査…） */
+  basis?: string;
 }
 
 export interface TargetInput {
   name: string;
   representative_age: number;
   definition: string | null;
+  /** 今の家を売ったお金を頭金にする候補（50代の住み替え・60歳以上）。住み替えの頭金での返済も出す */
+  uses_resale_down_payment?: boolean | null;
 }
 
 export interface CompetitorInput {
@@ -211,6 +221,8 @@ export interface Collected {
   datasets: Record<string, DatasetInfo>;
   town: TownInfo | null;
   market: MarketInput | null;
+  /** 広さの近い取引だけの相場（docs/相場の出し方変更.md 3.8） */
+  similarMarket: MarketInput | null;
   landPrice: LandPriceInput | null;
   zones: ZoneHit[];
   schools: { elementary: SchoolInput; juniorHigh: SchoolInput };
@@ -331,6 +343,33 @@ export function selectMarket(rows: MarketTrade[], band: AgeBand, latestYear: num
   return { band, fromYear: Math.min(...years), toYear: Math.max(...years), trades };
 }
 
+/** 広さの近い取引の範囲（物件の何倍か）と、件数が少ないとみなす件数（docs/相場の出し方変更.md 3.8） */
+export const SIMILAR_SIZE_RATIO = { min: 0.7, max: 1.3 } as const;
+export const SIMILAR_MIN_COUNT = 10;
+
+/** 物件の面積から、広さの近い取引の範囲（㎡） */
+export function similarRange(sqm: number): { min: number; max: number } {
+  return { min: sqm * SIMILAR_SIZE_RATIO.min, max: sqm * SIMILAR_SIZE_RATIO.max };
+}
+
+/**
+ * 広さの近い取引だけの相場。延床面積・土地面積がどちらも物件の 0.7〜1.3倍（両端を含む）の取引に絞り、
+ * 年の範囲は selectMarket と同じ決まりで選ぶ。土地面積の無い取引は使わない
+ */
+export function selectSimilarMarket(
+  rows: MarketTrade[],
+  band: AgeBand,
+  latestYear: number,
+  property: { building_sqm: number; land_sqm: number },
+): MarketInput | null {
+  const floor = similarRange(property.building_sqm);
+  const land = similarRange(property.land_sqm);
+  const near = rows.filter(
+    (r) => r.floor_sqm >= floor.min && r.floor_sqm <= floor.max && r.land_sqm !== null && r.land_sqm >= land.min && r.land_sqm <= land.max,
+  );
+  return selectMarket(near, band, latestYear);
+}
+
 const formatTsubo = (yen: number) => `${formatManYen1(yen)}/坪`;
 
 function marketFacts(c: Collected): FactDraft[] {
@@ -345,7 +384,7 @@ function marketFacts(c: Collected): FactDraft[] {
     floor: `区の相場の取引の延床面積（${ward}・${band}）`,
     land: `区の相場の取引の土地面積（${ward}・${band}）`,
   };
-  if (!m) return [...Object.values(labels).map((l) => fact("M", l, null, src)), landFact(c)];
+  if (!m) return [...Object.values(labels).map((l) => fact("M", l, null, src)), similarFact(c, ward, band, pricePerTsubo(p.price_man_yen * 10_000, p.building_sqm)), landFact(c)];
   // 区×築年数帯の、延床の坪単価の中央値で比べる。総額の相場は出さない（docs/相場の出し方変更.md 3.6）
   const period = { ...src, 時点: `${m.fromYear}〜${m.toYear}` };
   const unitMedian = median(m.trades.map((t) => pricePerTsubo(t.price, t.floor_sqm)));
@@ -357,8 +396,23 @@ function marketFacts(c: Collected): FactDraft[] {
     fact("M", labels.ratio, unitMedian !== null ? `${(own / unitMedian).toFixed(2)}倍（物件${formatTsubo(own)}）` : null, period),
     fact("M", labels.floor, floorMedian !== null ? `中央値${sqm(floorMedian)}（物件${sqm(p.building_sqm)}）` : null, period),
     fact("M", labels.land, landMedian !== null ? `中央値${sqm(landMedian)}（物件${sqm(p.land_sqm)}）` : null, period),
+    similarFact(c, ward, band, own),
     landFact(c),
   ];
+}
+
+/** 広さの近い取引の相場（docs/相場の出し方変更.md 3.8）。相場比は出さず、物件の坪単価を並べる */
+function similarFact(c: Collected, ward: string, band: string, own: number): FactDraft {
+  const p = c.property;
+  const floor = similarRange(p.building_sqm);
+  const land = similarRange(p.land_sqm);
+  const label = `広さの近い取引の相場（${ward}・${band}・延床${Math.round(floor.min)}〜${Math.round(floor.max)}㎡・土地${Math.round(land.min)}〜${Math.round(land.max)}㎡・延床の坪単価）`;
+  const s = c.similarMarket;
+  const src = sourcesOf(c, ["D01"]);
+  const unitMedian = s ? median(s.trades.map((t) => pricePerTsubo(t.price, t.floor_sqm))) : null;
+  if (!s || unitMedian === null) return fact("M", label, null, src);
+  const few = s.trades.length < SIMILAR_MIN_COUNT ? "。件数が少ない" : "";
+  return fact("M", label, `中央値${formatTsubo(unitMedian)}（${s.trades.length}件${few}。物件${formatTsubo(own)}）`, { ...src, 時点: `${s.fromYear}〜${s.toYear}` });
 }
 
 function landFact(c: Collected): FactDraft {
@@ -452,6 +506,8 @@ function areaFacts(c: Collected): FactDraft[] {
     { label: "6歳未満の世帯員のいる世帯の割合", ds: "D06", num: ["6歳未満世帯員のいる一般世帯総数"], den: "一般世帯総数" },
     { label: "65歳以上の世帯員のいる世帯の割合", ds: "D06", num: ["65歳以上世帯員のいる一般世帯総数"], den: "一般世帯総数" },
     { label: "核家族世帯の割合", ds: "D06", num: ["核家族世帯"], den: "一般世帯総数" },
+    // 親族のみの世帯のうち核家族でない世帯（3世代世帯など）。3世代世帯そのものの数ではないので、項目名にそう書く
+    { label: "核家族以外の親族世帯の割合（3世代世帯などを含む）", ds: "D06", num: ["核家族以外の世帯"], den: "一般世帯総数" },
     { label: "夫婦と子供から成る世帯の割合", ds: "D06", num: ["うち夫婦と子供から成る世帯"], den: "一般世帯総数" },
     { label: "夫婦のみの世帯の割合", ds: "D06", num: ["うち夫婦のみの世帯"], den: "一般世帯総数" },
     { label: "持ち家率", ds: "D07", num: ["持ち家"], den: "住宅に住む一般世帯" },
@@ -528,14 +584,14 @@ function transportFacts(c: Collected): FactDraft[] {
     fact(
       "T",
       "最寄り駅の乗降客数（1日あたり）",
-      !s ? null : typeof s.passengers === "number" ? `${formatNumber(s.passengers)}人` : (s.passengers ?? "データなし"),
+      !s ? null : typeof s.passengers === "number" ? `${formatNumber(s.passengers)}人` : s.passengers,
       sourcesOf(c, ["D26"]),
     ),
   );
   const b = c.bus;
-  out.push(
-    fact("T", "最寄りバス停（直線）", b.nearest ? `${b.nearest.name} ${formatDistance(b.nearest.distance_m)}${b.nearest.routes !== null ? `（系統数 ${b.nearest.routes}）` : ""}` : null, sourcesOf(c, ["D27"])),
-  );
+  const n = b.nearest;
+  const busDetail = n ? [n.routes !== null ? `系統数 ${n.routes}` : null, n.operators.length ? n.operators.join("・") : null].filter((x) => x !== null).join("：") : "";
+  out.push(fact("T", "最寄りバス停（直線）", n ? `${n.name} ${formatDistance(n.distance_m)}${busDetail ? `（${busDetail}）` : ""}` : null, sourcesOf(c, ["D27"])));
   out.push(
     fact("T", "バス停（1km以内）", formatNearby(b.within1km, null).replace("。3km以内になし", ""), sourcesOf(c, ["D27"]), {
       比較: b.wardAverage !== null && c.town ? `${c.town.ward}の町の平均 ${b.wardAverage.toFixed(1)}件` : undefined,
@@ -616,7 +672,8 @@ function buyerFacts(c: Collected): FactDraft[] {
   });
   const incomeBins = b.income.map((r) => ({ item: r.item, pct: r.value }));
   const b02 = c.datasets.B02?.as_of ?? "不明";
-  const shareSrc = { 出典: `${b.incomeSource ?? "住宅市場動向調査"}（${b.segment}の年収分布）から計算`, 時点: b02 };
+  // 年収分布は全国の値（新潟県の分布ではない）。項目名と出典に「全国」と書く（docs/事実シートの修正_実装案.md 2.2）
+  const shareSrc = { 出典: `${b.incomeSource ?? "住宅市場動向調査"}（全国、${b.segment}の年収分布）から計算`, 時点: b02 };
   const share = (incomeYen: number) => (incomeBins.length ? shareAboveIncome(incomeBins, incomeYen / 10_000) : null);
 
   // 前提どおり（35年）の返済額と必要年収
@@ -627,27 +684,51 @@ function buyerFacts(c: Collected): FactDraft[] {
   }
   for (const { label, row } of rates) {
     const s = share(calcLoan(price, row.value, la).requiredIncomeYen);
-    out.push(fact("B", `必要年収以上の世帯の割合（${label}${row.value}%）`, s !== null ? `約${Math.round(s)}%` : null, shareSrc));
+    out.push(fact("B", `必要年収以上の世帯の割合（${label}${row.value}%、全国の${b.segment}の年収分布から）`, s !== null ? `約${Math.round(s)}%` : null, shareSrc));
   }
 
-  // ターゲット候補ごとの返済（代表年齢から返済期間を決める）
-  for (const t of c.targets) {
-    const parts = rates.map(({ label, row }) => {
-      const r = calcLoan(price, row.value, la, t.representative_age);
-      const s = share(r.requiredIncomeYen);
-      return `${label}${row.value}%：月々約${formatManYen1(r.monthlyYen)}・必要年収約${formatManYen(r.requiredIncomeYen)}（必要年収以上の割合 ${s !== null ? `約${Math.round(s)}%` : "取得できず"}）`;
-    });
-    const term = calcLoan(price, rates[0].row.value, la, t.representative_age).termYears;
+  const repayment = (a: LoanAssumptions, age: number) =>
+    rates
+      .map(({ label, row }) => {
+        const r = calcLoan(price, row.value, a, age);
+        const s = share(r.requiredIncomeYen);
+        return `${label}${row.value}%：月々約${formatManYen1(r.monthlyYen)}・必要年収約${formatManYen(r.requiredIncomeYen)}（必要年収以上の割合 ${s !== null ? `約${Math.round(s)}%` : "取得できず"}）`;
+      })
+      .join("。");
+  const termOf = (t: TargetInput) => loanTerm(la, t.representative_age);
+
+  // ターゲット候補ごとの返済（代表年齢から返済期間を決める）。返済期間が同じ候補は数字も同じなので1行にまとめる
+  // （docs/事実シートの修正_実装案.md 2.3。指示文は候補名で答えるだけなので、行に候補名を並べれば足りる）
+  const terms = [...new Set(c.targets.map(termOf))].sort((x, y) => y - x);
+  for (const term of terms) {
+    const group = c.targets.filter((t) => termOf(t) === term);
     out.push(
-      fact("B", `【${t.name}】の返済の目安（代表年齢${t.representative_age}歳）`, `返済期間${term}年。${parts.join("。")}`, {
-        出典: `ローン計算（完済${la.maxAgeAtPayoff}歳まで）・${shareSrc.出典}`,
-        時点: rates[0].row.as_of,
-      }),
+      fact(
+        "B",
+        `【${group.map((t) => t.name).join("・")}】の返済の目安（返済期間${term}年）`,
+        `代表年齢${group.map((t) => t.representative_age).join("・")}歳。${repayment(la, group[0].representative_age)}`,
+        { 出典: `ローン計算（頭金${la.downPaymentPct}%・完済${la.maxAgeAtPayoff}歳まで）・${shareSrc.出典}`, 時点: rates[0].row.as_of },
+      ),
     );
   }
 
+  // 住み替えの候補は、今の家を売ったお金を頭金にするのが普通なので、二次取得者の自己資金比率を頭金にした返済も出す（2.4）
+  // 前提値がまだ無い（マイグレーションを反映する前）ときは出さない
+  const resale = c.assumptions.find((r) => r.key === `住み替えの頭金の割合（${c.property.property_class}）`);
+  if (resale) {
+    const lr = { ...la, downPaymentPct: resale.value };
+    for (const t of c.targets.filter((t) => t.uses_resale_down_payment)) {
+      out.push(
+        fact("B", `【${t.name}】の返済の目安（住み替えで頭金${resale.value}%の場合、返済期間${termOf(t)}年）`, `代表年齢${t.representative_age}歳。${repayment(lr, t.representative_age)}`, {
+          出典: `ローン計算（頭金${resale.value}%：${resale.basis ?? "前提値の表"}・完済${la.maxAgeAtPayoff}歳まで）・${shareSrc.出典}`,
+          時点: resale.as_of,
+        }),
+      );
+    }
+  }
+
   const list = (rows: StatRow[]) => rows.map((r) => `${r.item} ${formatPct(r.value)}`).join("、");
-  out.push(fact("B", `買主の年代（${b.segment}の世帯主）`, b.ages.length ? list(b.ages) : null, { 出典: b.agesSource ?? "住宅市場動向調査", 時点: b02 }));
+  out.push(fact("B", `買主の年代（${b.segment}の世帯主）`, b.ages.length ? withRemainder(b.ages) : null, { 出典: b.agesSource ?? "住宅市場動向調査", 時点: b02 }));
   out.push(
     fact("B", `物件を探した方法（${b.segment}、複数回答）`, b.search.length ? list(b.search) : null, { 出典: b.searchSource ?? "住宅市場動向調査", 時点: b02 }),
   );
@@ -665,6 +746,16 @@ function buyerFacts(c: Collected): FactDraft[] {
     );
   }
   return out;
+}
+
+/**
+ * 割合の内訳を並べ、合計が100%に足りなければ残りを「無回答など」として足す（AI が残りを勝手に読まないように）
+ * 残りは 0.1% 単位で丸めて 0 より大きいときだけ（docs/事実シートの修正_実装案.md 2.5）
+ */
+export function withRemainder(rows: StatRow[]): string {
+  const list = rows.map((r) => `${r.item} ${formatPct(r.value)}`);
+  const rest = Math.round((100 - rows.reduce((s, r) => s + r.value, 0)) * 10) / 10;
+  return [...list, ...(rest > 0 ? [`無回答など ${formatPct(rest)}（100%から引いた残り）`] : [])].join("、");
 }
 
 // ---- K 競合 ----

@@ -47,7 +47,7 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
   const [done] = await sql<{ result: StrategyResult; finished_at: Date; content: FactSheet; cost_usd: string }[]>`
     select r.result, r.finished_at, r.cost_usd, f.content
     from strategy_runs r join fact_sheets f on f.id = r.fact_sheet_id
-    where r.property_id = ${propertyId} and r.status = 'succeeded'
+    where r.property_id = ${propertyId} and r.status = 'succeeded' and r.form = '3回'
     order by r.finished_at desc limit 1
   `;
 
@@ -58,7 +58,7 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
       sql<{ id: string; name: string }[]>`select id, name from media`,
     ]);
     const facts = done.content.事実;
-    const { rows, credits } = sourceList(facts, usedFactIds(done.result.メイン, done.result.媒体), [...datasets]);
+    const { rows, credits } = sourceList(facts, usedFactIds(done.result.戦略, done.result.媒体), [...datasets]);
     report = (
       <>
         <div className="text-[11px] text-muted mb-2">

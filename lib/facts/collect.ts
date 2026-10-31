@@ -7,6 +7,7 @@ import type { Sql } from "../db";
 import type {
   AreaInput,
   AssumptionRow,
+  BusStopInput,
   BuyersInput,
   Collected,
   CompetitorInput,
@@ -19,11 +20,12 @@ import type {
   PropertyInput,
   SchoolInput,
   StatRow,
+  TargetInput,
   TownInfo,
   TransportInput,
   ZoneHit,
 } from "./build";
-import { ageBandOf, selectMarket } from "./build";
+import { ageBandOf, selectMarket, selectSimilarMarket } from "./build";
 import type { NearbyItem } from "./format";
 import { parseAddress, pinAddress, resolveZone, wardFromSourceUrl, type ZoneRow } from "./school-zones";
 import type { FactStepKey } from "./steps";
@@ -61,6 +63,11 @@ export const DEPARTMENTS: { label: string; match: string[] }[] = [
   { label: "耳鼻いんこう科", match: ["耳鼻いんこう科"] },
   { label: "皮膚科", match: ["皮膚科"] },
 ];
+
+/** 区の平均（ward_facility_averages）での診療科の kind。例：診療科:内科 */
+export function departmentKind(label: string): string {
+  return `診療科:${label}`;
+}
 
 const NEAR_M = 1000;
 const CAR_M = 3000;
@@ -144,7 +151,7 @@ export async function collect(sql: Sql, propertyId: number, today = todayJst(), 
   );
 
   const [market, landPrice, schools, nearby, transportNearby, area, buyers, assumptions, targets, competitors, media] = await inOrder(
-    step("market", () => collectMarket(sql, town ?? null, property.building_age)),
+    step("market", () => collectMarket(sql, town ?? null, property)),
     step("land", () => collectLandPrice(sql, pt)),
     step("schools", () => collectSchools(sql, pt, property.address, town ?? null)),
     step("facilities", () => collectNearby(sql, pt, town?.ward ?? null)),
@@ -152,10 +159,11 @@ export async function collect(sql: Sql, propertyId: number, today = todayJst(), 
     step("area", () => collectArea(sql, pt, town ?? null)),
     step("buyers", () => collectBuyers(sql, property.property_class)),
     step("loan", () => sql<(Omit<AssumptionRow, "id" | "value"> & { id: string; value: string })[]>`
-      select distinct on (key) id, key, value, unit, as_of from assumptions
+      select distinct on (key) id, key, value, unit, as_of, basis from assumptions
       where effective_from <= ${today}::date order by key, effective_from desc
     `),
-    () => sql<{ name: string; representative_age: number; definition: string | null }[]>`select name, representative_age, definition from target_candidates order by id`,
+    // 住み替えの印（uses_resale_down_payment）はマイグレーション 20261030110000 で足す列。反映前でも動くよう * で引く
+    () => sql<TargetInput[]>`select * from target_candidates order by id`,
     () => sql<{ position: number; price_man_yen: number | null; address: string | null; building_sqm: string | null; land_sqm: string | null; building_age: number | null; distance_m: number | null }[]>`
       select position, price_man_yen, address, building_sqm, land_sqm, building_age, extensions.st_distance(geog, ${pt}) as distance_m
       from competitors where property_id = ${propertyId} order by position
@@ -169,7 +177,8 @@ export async function collect(sql: Sql, propertyId: number, today = todayJst(), 
     transports: [...transports],
     datasets: Object.fromEntries(datasets.map((d) => [d.id, { ...d, row_count: d.row_count === null ? null : Number(d.row_count) }])),
     town: town ?? null,
-    market,
+    market: market?.market ?? null,
+    similarMarket: market?.similar ?? null,
     landPrice,
     zones: [...zones],
     schools,
@@ -180,7 +189,12 @@ export async function collect(sql: Sql, propertyId: number, today = todayJst(), 
     area,
     buyers,
     assumptions: assumptions.map((a) => ({ ...a, id: Number(a.id), value: Number(a.value) })),
-    targets: [...targets],
+    targets: targets.map((t) => ({
+      name: t.name,
+      representative_age: t.representative_age,
+      definition: t.definition,
+      uses_resale_down_payment: t.uses_resale_down_payment ?? null,
+    })),
     competitors: competitors.map(
       (c): CompetitorInput => ({
         ...c,
@@ -200,7 +214,7 @@ type Point = PendingQuery<Row[]>;
  * 区×築年数の相場（D01）。物件のある区（市区町村コード）の戸建ての取引を引き、帯と年の範囲は selectMarket で決める
  * 戸建ての条件は docs/相場の出し方変更.md 3.3（2026-10-28 小林さんと決定）。用途が空（成約価格情報）なら構造で判断する
  */
-async function collectMarket(sql: Sql, town: TownInfo | null, buildingAge: number): Promise<MarketInput | null> {
+async function collectMarket(sql: Sql, town: TownInfo | null, property: PropertyInput): Promise<{ market: MarketInput | null; similar: MarketInput | null } | null> {
   if (!town) return null;
   // 「直近5年」は取り込んだ最新の年から数える
   const [latest] = await sql<{ year: number | null }[]>`select max(year) as year from transactions`;
@@ -225,7 +239,9 @@ async function collectMarket(sql: Sql, town: TownInfo | null, buildingAge: numbe
     floor_sqm: Number(r.floor_sqm),
     land_sqm: r.land_sqm === null ? null : Number(r.land_sqm),
   }));
-  return selectMarket(trades, ageBandOf(buildingAge), latest.year);
+  const band = ageBandOf(property.building_age);
+  // 広さの近い取引だけの相場も、同じ取引から出す（docs/相場の出し方変更.md 3.8）
+  return { market: selectMarket(trades, band, latest.year), similar: selectSimilarMarket(trades, band, latest.year, property) };
 }
 
 /** 近くの公示地・基準地（D02・D03）。住宅地の地点のうち、3km以内でいちばん近いもの（新しい年） */
@@ -313,22 +329,50 @@ async function collectNearby(sql: Sql, pt: Point, ward: string | null): Promise<
     split(
       rows.filter((r) => (r.kind === "病院" || r.kind === "診療所") && r.departments?.some((x) => d.match.includes(x))),
       `${d.label}のある病院・診療所`,
-      null,
+      avg.get(departmentKind(d.label)) ?? null,
       ["D30"],
     ),
   );
   return { facilities, departments };
 }
 
-/** 交通（T）。最寄り駅と乗降客数、最寄りバス停、1km以内のバス停 */
+/** バス停の点（P11）。P11 は事業者ごとに点がある */
+export interface BusPole {
+  name: string;
+  distance_m: number;
+  routes: number | null;
+  operator: string | null;
+}
+
+/**
+ * 同じ名前のバス停の点を1つの停留所にまとめる（docs/事実シートの修正_実装案.md 1.3）
+ * 同じ名前の点は、同じ停留所の別の事業者とみなす。距離はいちばん近い点、系統数は足す（事業者が違うので二重に数えない）
+ * 1km以内の点だけに使う。市内には同じ名前の別の場所の停留所もあるため。並びは近い順
+ */
+export function groupBusStops(poles: BusPole[]): BusStopInput[] {
+  const stops = new Map<string, BusStopInput>();
+  for (const p of poles) {
+    const s = stops.get(p.name);
+    if (!s) {
+      stops.set(p.name, { name: p.name, distance_m: p.distance_m, routes: p.routes, operators: p.operator ? [p.operator] : [] });
+      continue;
+    }
+    s.distance_m = Math.min(s.distance_m, p.distance_m);
+    s.routes = s.routes === null || p.routes === null ? (s.routes ?? p.routes) : s.routes + p.routes;
+    if (p.operator && !s.operators.includes(p.operator)) s.operators.push(p.operator);
+  }
+  return [...stops.values()].sort((a, b) => a.distance_m - b.distance_m);
+}
+
+/** 交通（T）。最寄り駅と乗降客数、最寄りバス停、1km以内のバス停（停留所の名前でまとめる） */
 async function collectTransport(sql: Sql, pt: Point, ward: string | null) {
   const [[station], buses, [nearestBus], avg] = await inOrder(
     () => sql<{ name: string; attrs: Record<string, unknown> | null; distance_m: number }[]>`
       select name, attrs, extensions.st_distance(geog, ${pt}) as distance_m from facilities
       where kind = '駅' order by geog operator(extensions.<->) ${pt} limit 1
     `,
-    () => sql<{ name: string; distance_m: number }[]>`
-      select name, extensions.st_distance(geog, ${pt}) as distance_m from facilities
+    () => sql<{ name: string; attrs: Record<string, unknown> | null; distance_m: number }[]>`
+      select name, attrs, extensions.st_distance(geog, ${pt}) as distance_m from facilities
       where kind = 'バス停' and extensions.st_dwithin(geog, ${pt}, ${NEAR_M}) order by distance_m
     `,
     () => sql<{ name: string; attrs: Record<string, unknown> | null; distance_m: number }[]>`
@@ -340,17 +384,23 @@ async function collectTransport(sql: Sql, pt: Point, ward: string | null) {
   const lines = Array.isArray(station?.attrs?.["路線"]) ? (station.attrs["路線"] as { 路線?: string }[]).map((l) => l.路線).filter((l): l is string => !!l) : [];
   // 乗降客数は「乗降客数_2024」のように年の付いたキー
   const passengerKey = station?.attrs ? Object.keys(station.attrs).find((k) => /^乗降客数_\d{4}$/.test(k)) : undefined;
-  // 0 は乗降客数が公表されていない駅（「公表なし」）。S12 に駅が無ければ null（「データなし」）
+  // 0 は乗降客数が公表されていない駅（「公表なし」）。S12 に駅が無ければ null（「取得できず」）
   const raw = passengerKey ? station!.attrs![passengerKey] : null;
   const passengers = raw === null || raw === undefined || !Number.isFinite(Number(raw)) ? null : Number(raw) > 0 ? Number(raw) : ("公表なし" as const);
-  const routes = Number(nearestBus?.attrs?.["系統数"]);
+  const toPole = (b: { name: string; attrs: Record<string, unknown> | null; distance_m: number }): BusPole => {
+    const routes = Number(b.attrs?.["系統数"]);
+    const operator = b.attrs?.["事業者"];
+    return { name: b.name, distance_m: Number(b.distance_m), routes: Number.isFinite(routes) ? routes : null, operator: typeof operator === "string" && operator ? operator : null };
+  };
+  const stops = groupBusStops(buses.map(toPole));
   return {
     station: station
       ? { name: station.name, lines: [...new Set(lines)], distance_m: Number(station.distance_m), passengers }
       : null,
     bus: {
-      within1km: buses.map((b) => ({ name: b.name, distance_m: Number(b.distance_m) })),
-      nearest: nearestBus ? { name: nearestBus.name, distance_m: Number(nearestBus.distance_m), routes: Number.isFinite(routes) ? routes : null } : null,
+      within1km: stops.map(({ name, distance_m }) => ({ name, distance_m })),
+      // 1km以内に無いときだけ、いちばん近い点をそのまま使う
+      nearest: stops[0] ?? (nearestBus ? groupBusStops([toPole(nearestBus)])[0] : null),
       wardAverage: avg[0] ? Number(avg[0].avg_count) : null,
     },
   };

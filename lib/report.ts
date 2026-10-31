@@ -7,7 +7,7 @@ import type { Fact } from "./facts/types";
 /** 地図・ライブラリなど、事実とは別に常に出すクレジット */
 export const FIXED_CREDITS = ["地図：国土地理院 淡色地図（地理院タイル）", "住所検索：国土地理院 地理院地図の住所検索"];
 
-/** 画面に出すメインと媒体の文に付いた事実ID（出た順、重なりなし） */
+/** 画面に出す戦略と媒体の文に付いた事実ID（出た順、重なりなし） */
 export function usedFactIds(main: MainOutput, media: MediaOutput): string[] {
   const all = [
     main.summary,

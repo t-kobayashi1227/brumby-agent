@@ -15,6 +15,8 @@ import { defineJob } from "../lib/runner";
 // 2. スーパー・ドラッグストアの店は、OSM（D28）に同じ種類の店が約200m以内に無ければ、
 //    「スーパー」「ドラッグストア」としても足す（OSM を主、一覧で補う。docs/参考/OSM突き合わせ_2026-10-24.md）
 // 建物設置者の欄は個人の名前が入ることがあるので入れない
+// 位置は住所から出すと町丁目の代表点になることがあり、本当の店から100m以上ずれる。
+// 500m以内に名前の合う店が OSM（D28）か医療情報ネット（D30 の薬局）にあれば、その位置を使う（docs/事実シートの修正_実装案.md 1.2）
 //
 // 手順
 //   npm run ingest -- d29-review         PDF を読み、判定の確認用の CSV（大規模小売店舗_判定.csv）を書き出す。DB は使わない
@@ -29,6 +31,8 @@ import { defineJob } from "../lib/runner";
 // 並びは PDF と同じ（ページの上から下）。CSV の「ページ」「番号」で PDF と見比べられる
 
 const RAW_DIR = "niigata-pref";
+/** 名前の合う店の位置を借りる範囲（m） */
+const SAME_STORE_M = 500;
 const REVIEW_CSV = "大規模小売店舗_判定.csv";
 type StoreType = "スーパー" | "ドラッグストア";
 
@@ -153,6 +157,44 @@ interface Store {
   lon: number | null;
   lat: number | null;
   hit: string | null;
+  /** 位置を借りた店（借りなければ null） */
+  borrowed?: NearbyStore | null;
+  /** 住所から推定した位置（位置を借りたときに残す） */
+  geocoded?: { lon: number; lat: number } | null;
+}
+
+/** 店の名前を比べる形にする：NFKC、空白・会社の種類・「薬局」を除き、「ウェ」を「ウエ」に */
+export function storeNameKey(name: string): string {
+  return name
+    .normalize("NFKC")
+    .replace(/\s/g, "")
+    .replace(/株式会社|\(株\)|\(有\)|薬局/g, "")
+    .replace(/ウェ/g, "ウエ");
+}
+
+/**
+ * 同じ店か。支店名（「〜店」）まで入った名前どうしで、片方がもう片方を含めば同じ店とみなす
+ * 「ウエルシア薬局」のような支店名の無い名前は、近くの別の店と取り違えるので比べない
+ */
+export function isSameStore(a: string, b: string): boolean {
+  const [x, y] = [storeNameKey(a), storeNameKey(b)];
+  if (!x.endsWith("店") || !y.endsWith("店")) return false;
+  return x.includes(y) || y.includes(x);
+}
+
+export interface NearbyStore {
+  dataset_id: string;
+  name: string;
+  lon: number;
+  lat: number;
+  distance_m: number;
+}
+
+/** 位置を借りる店。名前の合う店のうち、OSM（D28）を先に、無ければ D30。同じ出典なら近いほう */
+export function pickSameStore(name: string, nearby: NearbyStore[]): NearbyStore | null {
+  const hits = nearby.filter((n) => n.distance_m <= SAME_STORE_M && isSameStore(name, n.name));
+  const order = (n: NearbyStore) => (n.dataset_id === "D28" ? 0 : 1);
+  return hits.sort((a, b) => order(a) - order(b) || a.distance_m - b.distance_m)[0] ?? null;
 }
 
 /**
@@ -289,6 +331,30 @@ export const d29LargeStores = defineJob<Store[]>({
 
   async load({ sql, prepared, log, check }) {
     const located = prepared.filter((s) => s.lon !== null && s.lat !== null);
+
+    // 0. 名前の合う店が近くにあれば、その位置を使う
+    const nearby = await sql<(NearbyStore & { i: number })[]>`
+      select x.i, f.dataset_id, f.name,
+        extensions.st_x(f.geog::extensions.geometry) as lon, extensions.st_y(f.geog::extensions.geometry) as lat,
+        extensions.st_distance(f.geog, extensions.st_setsrid(extensions.st_point(x.lon, x.lat), 4326)::extensions.geography) as distance_m
+      from jsonb_to_recordset(${sql.json(located.map((s, i) => ({ i, lon: s.lon, lat: s.lat })) as never)}) as x(i int, lon float8, lat float8)
+      join facilities f on ((f.dataset_id = 'D28' and f.kind in ('スーパー', 'ドラッグストア')) or (f.dataset_id = 'D30' and f.kind = '薬局'))
+        and extensions.st_dwithin(f.geog, extensions.st_setsrid(extensions.st_point(x.lon, x.lat), 4326)::extensions.geography, ${SAME_STORE_M})
+    `;
+    located.forEach((s, i) => {
+      const hit = pickSameStore(s.name, nearby.filter((n) => n.i === i).map((n) => ({ ...n, distance_m: Number(n.distance_m) })));
+      if (!hit) return;
+      s.geocoded = { lon: s.lon!, lat: s.lat! };
+      s.borrowed = hit;
+      s.lon = hit.lon;
+      s.lat = hit.lat;
+    });
+    const borrowed = located.filter((s) => s.borrowed);
+    log(`名前の合う店の位置を使った店 ${borrowed.length}店（OSM ${borrowed.filter((s) => s.borrowed!.dataset_id === "D28").length}、医療情報ネット ${borrowed.filter((s) => s.borrowed!.dataset_id === "D30").length}）`);
+    check(
+      "名前の合う店の位置を使った店",
+      borrowed.map((s) => `${s.city} ${s.name} ← ${s.borrowed!.name}（${s.borrowed!.dataset_id}、${Math.round(s.borrowed!.distance_m)}m）`),
+    );
     const base = (s: Store, kind: string): FacilityRow => ({
       dataset_id: "D29",
       kind,
@@ -299,8 +365,11 @@ export const d29LargeStores = defineJob<Store[]>({
         主な小売店舗: s.tenant || null,
         開店日: s.opened || null,
         閉店時刻: s.closing || null,
-        位置: "住所から推定（国土地理院 住所検索）",
+        位置: s.borrowed
+          ? `${s.borrowed.dataset_id === "D28" ? "OSM" : "医療情報ネット"}の同じ店（${s.borrowed.name}）の位置`
+          : "住所から推定（国土地理院 住所検索）",
         当たった住所: s.hit,
+        ...(s.geocoded ? { 住所から推定した位置: s.geocoded } : {}),
         ...(kind === "大規模小売店舗" ? { スーパー等の判定: s.type } : { 補った理由: "OSM に同じ種類の店が約200m以内に無い" }),
       },
       lon: s.lon!,

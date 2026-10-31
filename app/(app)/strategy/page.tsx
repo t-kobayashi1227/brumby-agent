@@ -31,8 +31,8 @@ export default async function StrategyListPage() {
     }[]
   >`
     select p.id, p.code, p.property_class, p.address, p.price_man_yen, p.layout, p.created_at, r.status,
-      (select done.result -> 'メイン' -> 'targets' -> 0 ->> 'name' from strategy_runs done
-        where done.property_id = p.id and done.status = 'succeeded' order by done.finished_at desc limit 1) as first_target
+      (select done.result -> '戦略' -> 'targets' -> 0 ->> 'name' from strategy_runs done
+        where done.property_id = p.id and done.status = 'succeeded' and done.form = '3回' order by done.finished_at desc limit 1) as first_target
     from properties p
     left join lateral (select status from strategy_runs where property_id = p.id order by created_at desc limit 1) r on true
     order by p.id

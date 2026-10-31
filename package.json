@@ -11,7 +11,8 @@
     "db:check": "tsx --env-file=.env.local scripts/db-check.ts",
     "facts": "tsx --env-file=.env.local scripts/facts.ts",
     "ingest": "node --max-old-space-size=10000 --env-file=.env.local --import tsx scripts/ingest/index.ts",
-    "strategy": "tsx --env-file=.env.local scripts/strategy.ts"
+    "strategy": "tsx --env-file=.env.local scripts/strategy.ts",
+    "paste": "tsx --env-file=.env.local scripts/paste.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

@@ -8,12 +8,28 @@ import { defineJob } from "../lib/runner";
 // npm run ingest -- osm
 // data/raw/osm/ に chubu-<日付>-free.shp.zip を置く（例：chubu-261024-free.shp.zip。日付 261024 が時点 2026-10-24）
 // 店は「点」（gis_osm_pois_free_1）と「建物の形」（gis_osm_pois_a_free_1）の2通りで入っているので、両方を読む。形は中心を位置にする
-// fclass：supermarket → スーパー、convenience → コンビニ、chemist → ドラッグストア
+// fclass：supermarket → スーパー、convenience → コンビニ、chemist → ドラッグストア。タグの誤りは名前で直す（NAME_FIXES）
 // （pharmacy は調剤薬局。薬局は医療情報ネットの方を使う）
 // 中部地方のファイルなので、新潟県の町から約300m以内の店だけを残す。先に d39-towns を入れておく
 // 出典表示は「© OpenStreetMap contributors」（ODbL）
 
 const KINDS: Record<string, string> = { supermarket: "スーパー", convenience: "コンビニ", chemist: "ドラッグストア" };
+
+/**
+ * OSM のタグの誤りを名前で直す（docs/事実シートの修正_実装案.md 1.1）
+ * convenience と付いていても、スーパーの名前ならスーパーにする（2026-10-30 に県内で「イオンスタイル上所」など3店）
+ */
+const NAME_FIXES: { fclass: string; pattern: RegExp; kind: string }[] = [
+  { fclass: "convenience", pattern: /イオン|原信|ウオロク|ピアレ|清水フードセンター/, kind: "スーパー" },
+];
+
+/** fclass と名前から種類を決める。使わない fclass は null。名前で直したときは fixed が true */
+export function kindOf(fclass: string, name: string): { kind: string; fixed: boolean } | null {
+  const kind = KINDS[fclass];
+  if (!kind) return null;
+  const fix = NAME_FIXES.find((f) => f.fclass === fclass && f.pattern.test(name.normalize("NFKC")));
+  return fix ? { kind: fix.kind, fixed: true } : { kind, fixed: false };
+}
 const PREF_BBOX = [137.6, 36.7, 139.95, 38.6]; // 新潟県（佐渡を含む）のおおよその範囲
 
 /** 図形の位置。点はそのまま、形は外周の頂点の平均（店の建物くらいの大きさなら十分） */
@@ -41,23 +57,31 @@ export const osm = defineJob({
     const files = unzipSync(zip.body, { filter: (f) => /^gis_osm_pois(_a)?_free_1\.(shp|dbf)$/.test(f.name) });
     const rows: FacilityRow[] = [];
     let unnamed = 0;
+    const fixed: string[] = [];
     for (const layer of ["gis_osm_pois_free_1", "gis_osm_pois_a_free_1"]) {
       for await (const f of readShapefile(files[`${layer}.shp`], files[`${layer}.dbf`], "utf-8")) {
         const p = f.properties;
-        const kind = KINDS[String(p.fclass)];
-        if (!kind || !f.geometry) continue;
+        const name = String(p.name ?? "").trim();
+        const k = kindOf(String(p.fclass), name);
+        if (!k || !f.geometry) continue;
         const pos = positionOf(f.geometry);
         if (!pos) continue;
         const [w, s, e, n] = PREF_BBOX;
         if (pos.lon < w || pos.lon > e || pos.lat < s || pos.lat > n) continue;
-        const name = String(p.name ?? "").trim();
+        const { kind } = k;
         if (!name) unnamed++;
+        if (k.fixed) fixed.push(`${name}：${KINDS[String(p.fclass)]} → ${kind}`);
         rows.push({
           dataset_id: "D28",
           kind,
           name: name || `（名前の無い${kind}）`,
           address: null,
-          attrs: { osm_id: p.osm_id, fclass: p.fclass, 形: layer.includes("_a_") ? "建物" : "点" },
+          attrs: {
+            osm_id: p.osm_id,
+            fclass: p.fclass,
+            形: layer.includes("_a_") ? "建物" : "点",
+            ...(k.fixed ? { 種類の補正: `名前から（OSM は ${p.fclass}）` } : {}),
+          },
           source_ref: `${layer.includes("_a_") ? "a" : "p"}${p.osm_id}`,
           ...pos,
         });
@@ -72,5 +96,7 @@ export const osm = defineJob({
     `;
     log(`${zip.name}：新潟県の範囲の四角から ${rows.length}店を読み、新潟県の外の ${removed.count}店を除きました（名前の無い店 ${unnamed}）`);
     check("名前の無い店", unnamed);
+    // 新潟県の範囲の四角で数えるので、県の外の店も入ることがある
+    check("名前で種類を直した店", fixed);
   },
 });

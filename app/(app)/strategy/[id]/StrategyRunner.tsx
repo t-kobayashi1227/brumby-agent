@@ -8,8 +8,7 @@ import { btnPrimary, card } from "../../../_lib/ui";
 // 実行はサーバーで動き続けるので、画面を閉じても止まらない。開き直すと、実行中なら進み具合の表示に戻る
 
 const STAGES = [
-  { key: "分析", label: "物件・立地・価格・買い手の分析（4つ同時）" },
-  { key: "メイン", label: "販売戦略を決める（メイン）" },
+  { key: "戦略", label: "事実を分析し、販売戦略を決める" },
   { key: "媒体", label: "媒体と配分を決める" },
   { key: "確認", label: "点検する（プログラムと確認）" },
   { key: "金額の計算", label: "配分から金額を計算する" },
@@ -66,7 +65,7 @@ export default function StrategyRunner({ propertyId, initial, hasReport, hasLoca
       const res = await fetch(`/api/properties/${propertyId}/strategy`, { method: "POST" });
       const body = (await res.json()) as { runId?: number; error?: string };
       if (!res.ok || !body.runId) throw new Error(body.error ?? `始められませんでした（HTTP ${res.status}）`);
-      setRun({ id: body.runId, status: "running", stage: "分析", error: null, costUsd: 0, startedAt: new Date().toISOString() });
+      setRun({ id: body.runId, status: "running", stage: "戦略", error: null, costUsd: 0, startedAt: new Date().toISOString() });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -83,7 +82,7 @@ export default function StrategyRunner({ propertyId, initial, hasReport, hasLoca
         <div className="mr-auto">
           <div className="text-[15px] font-bold text-ink">販売戦略の作成</div>
           <div className="text-[11px] text-muted mt-0.5">
-            最新の事実シートから、AIエージェントが戦略を作ります。1.5分ほどかかります。画面を閉じても作成は続きます
+            最新の事実シートから、AIエージェントが戦略を作ります。数分かかります。画面を閉じても作成は続きます
           </div>
         </div>
         <button type="button" onClick={start} disabled={running || !hasLocation} className={`${btnPrimary} disabled:opacity-60`}>

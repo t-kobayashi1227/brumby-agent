@@ -6,12 +6,14 @@ import {
   depthLower,
   pricePerTsubo,
   selectMarket,
+  selectSimilarMarket,
   sourceOf,
   type Collected,
   type DatasetInfo,
   type MarketTrade,
+  withRemainder,
 } from "../lib/facts/build";
-import { toD10TownName } from "../lib/facts/collect";
+import { groupBusStops, toD10TownName } from "../lib/facts/collect";
 import { formatChange, formatDistance, formatManYen1, formatNearby, median } from "../lib/facts/format";
 import { numberFacts, type Fact } from "../lib/facts/types";
 
@@ -91,6 +93,16 @@ function sample(overrides: Partial<Collected> = {}): Collected {
         { year: 2026, building_year: 2004, price: 22_000_000, floor_sqm: 120, land_sqm: null },
       ],
     },
+    similarMarket: {
+      band: { from: 20, to: 29 },
+      fromYear: 2015,
+      toYear: 2023,
+      trades: [
+        { year: 2015, building_year: 1990, price: 18_000_000, floor_sqm: 100, land_sqm: 180 },
+        { year: 2018, building_year: 1995, price: 20_000_000, floor_sqm: 110, land_sqm: 200 },
+        { year: 2023, building_year: 2000, price: 21_000_000, floor_sqm: 100, land_sqm: 220 },
+      ],
+    },
     landPrice: { dataset_id: "D02", address: "新潟県　新潟市西区架空町２丁目１番", price_per_sqm: 35800, change_rate: 0.6, year: 2026, distance_m: 652 },
     zones: [
       { dataset_id: "D04", kind: "用途地域", label: "第１種低層住居専用地域", attrs: null },
@@ -112,14 +124,17 @@ function sample(overrides: Partial<Collected> = {}): Collected {
       },
       { label: "スーパー", within1km: [], nearest3km: { name: "架空スーパー", distance_m: 1140 }, wardAverage: 2.1, datasetIds: ["D28", "D29"] },
     ],
-    departments: [{ label: "小児科のある病院・診療所", within1km: [], nearest3km: null, wardAverage: null, datasetIds: ["D30"] }],
+    departments: [
+      { label: "小児科のある病院・診療所", within1km: [], nearest3km: null, wardAverage: null, datasetIds: ["D30"] },
+      { label: "内科のある病院・診療所", within1km: [{ name: "架空内科医院", distance_m: 420 }], nearest3km: null, wardAverage: 3.46, datasetIds: ["D30"] },
+    ],
     station: { name: "架空", lines: ["越後線"], distance_m: 1450, passengers: null },
-    bus: { within1km: [{ name: "架空停", distance_m: 120 }], nearest: { name: "架空停", distance_m: 120, routes: 3 }, wardAverage: 16.5 },
+    bus: { within1km: [{ name: "架空停", distance_m: 120 }], nearest: { name: "架空停", distance_m: 120, routes: 3, operators: ["架空交通"] }, wardAverage: 16.5 },
     area: {
       d10Town: { 人口計: 1000, 世帯数: 400, "0〜4歳": 50, "5〜9歳": 50, "10〜14歳": 58, "20〜24歳": 50, "25〜29歳": 50, "30〜34歳": 50, "35〜39歳": 50 },
       d10Ward: { 人口計: 10000, 世帯数: 4000, "0〜4歳": 400, "5〜9歳": 400, "10〜14歳": 390 },
-      censusTown: { D06: { 一般世帯総数: 400, "18歳未満世帯員のいる一般世帯総数": 100 }, D07: { 住宅に住む一般世帯: 400, 持ち家: 300, 民営借家: null } },
-      censusWard: { D06: { 一般世帯総数: 4000, "18歳未満世帯員のいる一般世帯総数": 800 } },
+      censusTown: { D06: { 一般世帯総数: 400, "18歳未満世帯員のいる一般世帯総数": 100, 核家族以外の世帯: 30 }, D07: { 住宅に住む一般世帯: 400, 持ち家: 300, 民営借家: null } },
+      censusWard: { D06: { 一般世帯総数: 4000, "18歳未満世帯員のいる一般世帯総数": 800, 核家族以外の世帯: 200 } },
       meshNear: { total2025: 10000, total2035: 9180, kids2025: 1200, kids2035: 1000 },
       meshWard: { total2025: 100000, total2035: 94000, kids2025: 11000, kids2035: 9500 },
     },
@@ -149,10 +164,12 @@ function sample(overrides: Partial<Collected> = {}): Collected {
       { id: 4, key: "返済負担率", value: 25, unit: "%", as_of: "2025年度" },
       { id: 5, key: "返済期間", value: 35, unit: "年", as_of: "2026-10" },
       { id: 6, key: "完済年齢の上限", value: 80, unit: "歳", as_of: "令和7年度" },
+      { id: 7, key: "住み替えの頭金の割合（中古）", value: 49.2, unit: "%", as_of: "令和7年度", basis: "住宅市場動向調査 二次取得者の自己資金比率" },
     ],
     targets: [
       { name: "若い夫婦", representative_age: 30, definition: "世帯主が20〜30代前半の夫婦" },
-      { name: "60歳以上", representative_age: 65, definition: null },
+      { name: "60歳以上", representative_age: 65, definition: null, uses_resale_down_payment: true },
+      { name: "単身", representative_age: 35, definition: null },
     ],
     competitors: [{ position: 1, price_man_yen: 2380, address: "新潟市西区架空町", building_sqm: 100, land_sqm: null, building_age: 18, distance_m: 1234 }],
     media: [{ id: "C-01", name: "SUUMO", category: "不動産ポータル", purpose: "問い合わせ", reach_ages: "30〜40代" }],
@@ -169,7 +186,14 @@ function find(facts: Fact[], item: string | RegExp): Fact {
 describe("書き方", () => {
   it("直線距離は1km未満を10m、1km以上を0.1kmで丸める", () => {
     expect(formatDistance(652)).toBe("直線650m");
-    expect(formatDistance(995)).toBe("直線1000m");
+    // 1km未満は丸めても1000mにしない（1km以内の一覧で境目の外に見えないように）
+    expect(formatDistance(994)).toBe("直線990m");
+    expect(formatDistance(995)).toBe("直線990m");
+    expect(formatDistance(999)).toBe("直線990m");
+    expect(formatDistance(1000)).toBe("直線1.0km");
+    expect(formatDistance(1001)).toBe("直線1.0km");
+    expect(formatDistance(1049)).toBe("直線1.0km");
+    expect(formatDistance(1050)).toBe("直線1.1km");
     expect(formatDistance(1140)).toBe("直線1.1km");
     expect(formatDistance(2000)).toBe("直線2.0km");
   });
@@ -236,6 +260,61 @@ describe("相場に使う取引の選び方（selectMarket）", () => {
   it("新築（築0年）は築0〜1年の帯の取引と比べる", () => {
     const m = selectMarket([...trades(2025, 0, 2), ...trades(2025, 1, 3), ...trades(2025, 2, 4)], ageBandOf(0), 2026);
     expect(m!.trades).toHaveLength(5);
+  });
+});
+
+describe("広さの近い取引の選び方（selectSimilarMarket）", () => {
+  const band = ageBandOf(22);
+  const property = { building_sqm: 100, land_sqm: 200 };
+  const trade = (floor_sqm: number, land_sqm: number | null, year = 2024): MarketTrade => ({ year, building_year: year - 22, price: 20_000_000, floor_sqm, land_sqm });
+
+  it("延床・土地がどちらも 0.7〜1.3倍（両端を含む）の取引だけを使う", () => {
+    const rows = [trade(70, 140), trade(130, 260), trade(69.9, 200), trade(100, 260.1), trade(100, null), trade(100, 200)];
+    expect(selectSimilarMarket(rows, band, 2026, property)?.trades.map((t) => [t.floor_sqm, t.land_sqm])).toEqual([
+      [70, 140],
+      [130, 260],
+      [100, 200],
+    ]);
+  });
+
+  it("年の範囲は selectMarket と同じ決まり（直近5年で20件に足りなければ全部の年）。無ければ null", () => {
+    const m = selectSimilarMarket([trade(100, 200, 2016), trade(100, 200, 2024)], band, 2026, property);
+    expect(m).toMatchObject({ fromYear: 2016, toYear: 2024 });
+    expect(selectSimilarMarket([trade(200, 200)], band, 2026, property)).toBeNull();
+  });
+});
+
+describe("バス停を停留所の名前でまとめる（groupBusStops）", () => {
+  it("同じ名前の点は1件にし、距離は近いほう、系統数は合計、事業者は並べる", () => {
+    const stops = groupBusStops([
+      { name: "南地区センター前", distance_m: 244, routes: 1, operator: "新潟交通（株）" },
+      { name: "ユニゾンプラザ前", distance_m: 290, routes: 1, operator: "新潟交通（株）" },
+      { name: "ユニゾンプラザ前", distance_m: 288, routes: 1, operator: "新潟交通観光バス（株）" },
+      { name: "近江口", distance_m: 554, routes: null, operator: null },
+    ]);
+    expect(stops).toEqual([
+      { name: "南地区センター前", distance_m: 244, routes: 1, operators: ["新潟交通（株）"] },
+      { name: "ユニゾンプラザ前", distance_m: 288, routes: 2, operators: ["新潟交通（株）", "新潟交通観光バス（株）"] },
+      { name: "近江口", distance_m: 554, routes: null, operators: [] },
+    ]);
+  });
+
+  it("系統数の分からない点があっても、分かる点の数を使う", () => {
+    const [stop] = groupBusStops([
+      { name: "架空停", distance_m: 100, routes: null, operator: "A" },
+      { name: "架空停", distance_m: 110, routes: 2, operator: "A" },
+    ]);
+    expect(stop).toEqual({ name: "架空停", distance_m: 100, routes: 2, operators: ["A"] });
+  });
+});
+
+describe("割合の内訳の残り（withRemainder）", () => {
+  it("合計が100%に足りなければ残りを足し、100%なら足さない", () => {
+    const ages = [5.5, 22.9, 26.5, 25.7, 14.6].map((value, i) => ({ item: `区分${i + 1}`, value }));
+    expect(withRemainder(ages)).toBe("区分1 5.5%、区分2 22.9%、区分3 26.5%、区分4 25.7%、区分5 14.6%、無回答など 4.8%（100%から引いた残り）");
+    expect(withRemainder([{ item: "A", value: 60 }, { item: "B", value: 40 }])).toBe("A 60.0%、B 40.0%");
+    // 足し算の誤差（99.99…%）では足さない
+    expect(withRemainder([{ item: "A", value: 33.33 }, { item: "B", value: 33.33 }, { item: "C", value: 33.34 }])).toBe("A 33.3%、B 33.3%、C 33.3%");
   });
 });
 
@@ -317,19 +396,29 @@ describe("事実シートの組み立て", () => {
     expect(find(facts, /^区の相場の取引の延床面積/)).toMatchObject({ id: "M-03", 値: "中央値105㎡（物件105.5㎡）", 時点: "2015〜2026" });
     // 土地面積の無い取引は除いて中央値を出す
     expect(find(facts, /^区の相場の取引の土地面積/)).toMatchObject({ id: "M-04", 値: "中央値200㎡（物件200㎡）" });
-    expect(find(facts, "近くの公示地（住宅地）")).toMatchObject({
+    // 広さの近い取引の相場：相場比は出さず、物件の坪単価を並べる。10件未満は「件数が少ない」
+    // 18,000,000/100、20,000,000/110、21,000,000/100 の坪単価の中央値 ＝ 20,000,000÷110×3.30578 ≒ 60.1万円
+    expect(find(facts, /^広さの近い取引の相場/)).toMatchObject({
       id: "M-05",
+      項目: "広さの近い取引の相場（西区・築20〜29年・延床74〜137㎡・土地140〜260㎡・延床の坪単価）",
+      値: "中央値60.1万円/坪（3件。件数が少ない。物件77.7万円/坪）",
+      時点: "2015〜2023",
+      出典: "不動産情報ライブラリ XIT001",
+    });
+    expect(find(facts, "近くの公示地（住宅地）")).toMatchObject({
+      id: "M-06",
       値: "35,800円/㎡（前年比+0.6%）、物件から直線650m、所在地：新潟県新潟市西区架空町２丁目１番",
     });
   });
 
-  it("相場（M）：取引が無ければ4件とも「取得できず」で、IDの並びは変わらない", () => {
-    const f = buildFacts(sample({ market: null }));
+  it("相場（M）：取引が無ければ5件とも「取得できず」で、IDの並びは変わらない", () => {
+    const f = buildFacts(sample({ market: null, similarMarket: null }));
     expect(find(f, /^区の相場（/)).toMatchObject({ id: "M-01", 項目: "区の相場（西区・築20〜29年・戸建・延床の坪単価）", 値: null, 状態: "取得できず" });
     expect(find(f, /^相場比/)).toMatchObject({ id: "M-02", 状態: "取得できず" });
     expect(find(f, /^区の相場の取引の延床面積/)).toMatchObject({ id: "M-03", 状態: "取得できず" });
     expect(find(f, /^区の相場の取引の土地面積/)).toMatchObject({ id: "M-04", 状態: "取得できず" });
-    expect(find(f, "近くの公示地（住宅地）").id).toBe("M-05");
+    expect(find(f, /^広さの近い取引の相場/)).toMatchObject({ id: "M-05", 状態: "取得できず" });
+    expect(find(f, "近くの公示地（住宅地）").id).toBe("M-06");
   });
 
   it("エリア（A）：町名別人口から割合を計算し、区と並べる", () => {
@@ -338,6 +427,8 @@ describe("事実シートの組み立て", () => {
     // 足す年齢の値が無いときは推測せず「取得できず」
     expect(find(facts, "40〜59歳の割合").状態).toBe("取得できず");
     expect(find(facts, "18歳未満の世帯員のいる世帯の割合")).toMatchObject({ 値: "25.0%", 比較: "西区 20.0%", 出典: "e-Stat 国勢調査 T001084から計算" });
+    // 3世代世帯そのものではないので、項目名に「核家族以外の親族世帯」と書く
+    expect(find(facts, "核家族以外の親族世帯の割合（3世代世帯などを含む）")).toMatchObject({ 値: "7.5%", 比較: "西区 5.0%" });
     expect(find(facts, "持ち家率").値).toBe("75.0%");
     expect(find(facts, "民営借家の割合").状態).toBe("取得できず");
     expect(find(facts, /^将来の人口/)).toMatchObject({ 値: "10,000人→9,180人（-8.2%）", 比較: "西区 -6.0%" });
@@ -371,6 +462,8 @@ describe("事実シートの組み立て", () => {
       時点: "2019-12",
     });
     expect(find(facts, "スーパー（1km以内）")).toMatchObject({ 値: "0件。3km以内の最寄り：架空スーパー 直線1.1km", 出典: "OpenStreetMap・新潟県 大規模小売店舗一覧", 時点: "2026-10-24・2026-09" });
+    // 診療科にも区の平均を並べる
+    expect(find(facts, "内科のある病院・診療所（1km以内）")).toMatchObject({ 値: "1件：架空内科医院 直線420m", 比較: "西区の町の平均 3.5件" });
     const kids = find(facts, "小児科のある病院・診療所（1km以内）");
     expect(kids.値).toBe("0件。3km以内になし");
     expect(kids).not.toHaveProperty("比較");
@@ -379,13 +472,13 @@ describe("事実シートの組み立て", () => {
   it("交通（T）：入力の徒歩分と、直線距離の最寄り", () => {
     expect(find(facts, "交通1（物件資料の徒歩分）")).toMatchObject({ 値: "JR越後線 架空駅 徒歩18分", 出典: "入力" });
     expect(find(facts, "最寄り駅（直線）").値).toBe("架空駅（越後線） 直線1.5km");
-    // S12 に無い駅は「データなし」、0 の駅は「公表なし」（2026-10-25 小林さんと決定）
-    expect(find(facts, "最寄り駅の乗降客数（1日あたり）")).toMatchObject({ 値: "データなし", 状態: "取得", 出典: "国土数値情報 S12" });
+    // S12 に無い駅は「取得できず」、0 の駅は「公表なし」（2026-10-25 小林さんと決定、10-30 に「データなし」から変更）
+    expect(find(facts, "最寄り駅の乗降客数（1日あたり）")).toMatchObject({ 値: null, 状態: "取得できず", 出典: "国土数値情報 S12" });
     const unpublished = buildFacts(sample({ station: { ...sample().station!, passengers: "公表なし" } }));
-    expect(find(unpublished, "最寄り駅の乗降客数（1日あたり）").値).toBe("公表なし");
+    expect(find(unpublished, "最寄り駅の乗降客数（1日あたり）")).toMatchObject({ 値: "公表なし", 状態: "取得" });
     const published = buildFacts(sample({ station: { ...sample().station!, passengers: 1862 } }));
     expect(find(published, "最寄り駅の乗降客数（1日あたり）").値).toBe("1,862人");
-    expect(find(facts, "最寄りバス停（直線）").値).toBe("架空停 直線120m（系統数 3）");
+    expect(find(facts, "最寄りバス停（直線）").値).toBe("架空停 直線120m（系統数 3：架空交通）");
     expect(find(facts, "バス停（1km以内）")).toMatchObject({ 値: "1件：架空停 直線120m", 比較: "西区の町の平均 16.5件" });
   });
 
@@ -416,11 +509,30 @@ describe("事実シートの組み立て", () => {
     expect(find(facts, "月々の返済額（固定3.83%・35年）")).toMatchObject({ id: "B-03", 値: "約9.7万円" });
     expect(find(facts, "必要年収（固定3.83%）")).toMatchObject({ id: "B-04", 値: "約464万円" });
     // 318万円：400万円未満の区分の (400-318)/400 ＝ 20.5% × 20 ＝ 4.1 ＋ 80 ＝ 84.1 → 約84%
-    expect(find(facts, "必要年収以上の世帯の割合（変動1.3%）").値).toBe("約84%");
-    const senior = find(facts, "【60歳以上】の返済の目安（代表年齢65歳）");
-    expect(senior.値).toMatch(/^返済期間15年。/);
+    // 年収分布は全国の値なので、項目名と出典に「全国」と書く
+    const share = find(facts, "必要年収以上の世帯の割合（変動1.3%、全国の中古戸建を買った世帯の年収分布から）");
+    expect(share.値).toBe("約84%");
+    expect(share.出典).toBe("住宅市場動向調査 p.450（全国、中古戸建を買った世帯の年収分布）から計算");
+    // 返済期間が同じ候補（35年）は1行にまとめる。並びは返済期間の長い順
+    const terms = facts.filter((f) => f.項目.includes("の返済の目安")).map((f) => f.項目);
+    expect(terms).toEqual([
+      "【若い夫婦・単身】の返済の目安（返済期間35年）",
+      "【60歳以上】の返済の目安（返済期間15年）",
+      "【60歳以上】の返済の目安（住み替えで頭金49.2%の場合、返済期間15年）",
+    ]);
+    expect(find(facts, "【若い夫婦・単身】の返済の目安（返済期間35年）").値).toMatch(/^代表年齢30・35歳。変動1.3%：月々約6.6万円・必要年収約318万円/);
+    // 頭金49.2%：借入 2,480万円×0.508＝1,259.84万円を15年・1.3% → 月々約7.7万円、必要年収 約370万円
+    const resale = find(facts, "【60歳以上】の返済の目安（住み替えで頭金49.2%の場合、返済期間15年）");
+    expect(resale.値).toMatch(/^代表年齢65歳。変動1.3%：月々約7.7万円・必要年収約370万円/);
+    expect(resale).toMatchObject({ 時点: "令和7年度" });
+    expect(resale.出典).toMatch(/^ローン計算（頭金49.2%：住宅市場動向調査 二次取得者の自己資金比率/);
+    // 前提値が無ければ住み替えの行は出さない
+    const noResale = buildFacts(sample({ assumptions: sample().assumptions.filter((a) => !a.key.startsWith("住み替え")) }));
+    expect(noResale.some((f) => f.項目.includes("住み替えで頭金"))).toBe(false);
     expect(find(facts, "ターゲット候補「60歳以上」の定義").値).toBe("定義は未設定（代表年齢65歳）");
     expect(find(facts, "Instagramの利用率（年代別）").値).toBe("20代83%、30代77%");
+    // 合計が100%に足りない分は「無回答など」として足す
+    expect(find(facts, "買主の年代（中古戸建を買った世帯の世帯主）").値).toBe("30代 22.9%、40代 26.5%、無回答など 50.6%（100%から引いた残り）");
   });
 
   it("競合（K）：入力のない値はそう書き、この物件との差を比較に入れる", () => {

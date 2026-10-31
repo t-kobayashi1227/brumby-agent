@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { AnalysisAgent, AnalysisOutput, MainOutput, MediaOutput } from "../../../../lib/agents/schemas";
-import { ANALYSIS_KINDS } from "../../../../lib/agents/schemas";
+import type { MediaOutput, StrategyOutput } from "../../../../lib/agents/schemas";
+import { STRATEGY_TOPICS } from "../../../../lib/agents/schemas";
 import type { simulate } from "../../../../lib/calc/budget";
 import type { Fact } from "../../../../lib/facts/types";
 import { evidenceText, FIXED_CREDITS, type SourceRow } from "../../../../lib/report";
@@ -15,8 +15,7 @@ import MediaDonut, { MEDIA_COLORS } from "./MediaDonut";
 
 export interface StrategyResult {
   fact_sheet_id: number;
-  分析: Record<AnalysisAgent, AnalysisOutput>;
-  メイン: MainOutput;
+  戦略: StrategyOutput;
   媒体: MediaOutput;
   予算シミュレーション: ReturnType<typeof simulate>;
 }
@@ -27,8 +26,16 @@ const TABS = [
   { key: "evidence", label: "根拠データ" },
 ];
 
-const ANALYSIS_ORDER: AnalysisAgent[] = ["物件", "立地", "価格", "買い手"];
-const ANALYSIS_TITLE: Record<AnalysisAgent, string> = { 物件: "物件の強み・弱み", 立地: "立地と暮らし", 価格: "価格の位置づけ", 買い手: "買い手の見込み" };
+/** 分析の見出しの順。組み合わせた見立てを先に出す */
+const TOPIC_ORDER: (typeof STRATEGY_TOPICS)[number][] = ["組み合わせ", "物件", "立地", "価格", "買い手", "その他"];
+const TOPIC_TITLE: Record<(typeof STRATEGY_TOPICS)[number], string> = {
+  組み合わせ: "組み合わせた見立て",
+  物件: "物件",
+  立地: "立地と暮らし",
+  価格: "価格",
+  買い手: "買い手",
+  その他: "その他の気づき",
+};
 
 const manYen = (n: number) => `${n.toFixed(1)}万円`;
 
@@ -79,7 +86,7 @@ function Label({ children, tone = "default" }: { children: React.ReactNode; tone
 }
 
 function StrategyTab({ r, facts, sources, credits, mediaNames }: { r: StrategyResult; facts: Map<string, Fact>; sources: SourceRow[]; credits: string[]; mediaNames: Record<string, string> }) {
-  const m = r.メイン;
+  const m = r.戦略;
   const media = r.媒体;
   const targets = [...m.targets].sort((a, b) => a.rank - b.rank);
   const appeals = [...m.appeals].sort((a, b) => a.rank - b.rank).slice(0, 3);
@@ -252,43 +259,42 @@ function StrategyTab({ r, facts, sources, credits, mediaNames }: { r: StrategyRe
 }
 
 function AreaTab({ r, facts }: { r: StrategyResult; facts: Map<string, Fact> }) {
+  const { analysis, unknown } = r.戦略;
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      {ANALYSIS_ORDER.map((agent) => {
-        const a = r.分析[agent];
-        if (!a) return null;
+    <div className="grid gap-4">
+      {TOPIC_ORDER.map((topic) => {
+        const items = analysis.filter((a) => a.topic === topic);
+        if (items.length === 0) return null;
         return (
-          <Block key={agent} title={ANALYSIS_TITLE[agent]}>
-            <div className="grid gap-4">
-              {ANALYSIS_KINDS[agent].map((kind) => {
-                const items = a.findings.filter((f) => f.kind === kind);
-                if (items.length === 0) return null;
-                return (
-                  <div key={kind}>
-                    <div className="text-[12px] font-bold text-brand mb-1.5">{kind}</div>
-                    <ul className="grid gap-2.5">
-                      {items.map((f, i) => (
-                        <li key={i}>
-                          <Text>{f.text}</Text>
-                          <Evidence ids={f.evidence} facts={facts} />
-                        </li>
-                      ))}
-                    </ul>
+          <Block key={topic} title={TOPIC_TITLE[topic]}>
+            <ul className="grid gap-4">
+              {items.map((a, i) => (
+                <li key={i} className="grid gap-1">
+                  <div className="text-[12px] text-body">{a.fact}</div>
+                  <div>
+                    <span className="text-[11px] font-bold text-brand mr-1.5">買い手にとって</span>
+                    <span className="text-[13px] text-ink leading-relaxed">{a.meaning}</span>
                   </div>
-                );
-              })}
-              {a.unknown.length > 0 && (
-                <div className="pt-2 border-t border-divider text-[11px] text-muted">
-                  <div className="font-bold mb-0.5">使えなかった事実</div>
-                  {a.unknown.map((u, i) => (
-                    <div key={i}>{u}</div>
-                  ))}
-                </div>
-              )}
-            </div>
+                  <div>
+                    <span className="text-[11px] font-bold text-brand mr-1.5">販売での使い方</span>
+                    <span className="text-[13px] text-ink leading-relaxed">{a.use}</span>
+                  </div>
+                  <Evidence ids={a.evidence} facts={facts} />
+                </li>
+              ))}
+            </ul>
           </Block>
         );
       })}
+      {unknown.length > 0 && (
+        <Block title="事実シートから分からないこと">
+          <ul className="grid gap-1 text-[12px] text-body">
+            {unknown.map((u, i) => (
+              <li key={i}>{u}</li>
+            ))}
+          </ul>
+        </Block>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { after } from "next/server";
 import { runStrategy } from "../../../../../lib/agents/run";
 import { getSql } from "../../../../../lib/db";
 
-// 戦略を作る（④の7つのエージェント）。1回で1.5〜2.5分かかるので、POST は実行を始めて id だけ返し、残りは after で動かし続ける
+// 戦略を作る（④の戦略・媒体・確認の3回の呼び出し）。数分かかるので、POST は実行を始めて id だけ返し、残りは after で動かし続ける
 // 画面は GET で進み具合（status・stage）を数秒おきに読み、終わったらレポートを読み直す
 // Vercel に置くときは、この関数の実行時間の上限（maxDuration）が実行の長さに足りるか確かめる（段階5では課題として残す）
 
