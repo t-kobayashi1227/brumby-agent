@@ -3,7 +3,7 @@
 // 距離はすべて geography 型の直線距離（m）。組み立ては build.ts で行う
 
 import type { PendingQuery, Row } from "postgres";
-import type { Sql } from "../db";
+import { inOrder, type Sql } from "../db";
 import type {
   AreaInput,
   AssumptionRow,
@@ -26,12 +26,12 @@ import type {
   ZoneHit,
 } from "./build";
 import { ageBandOf, selectMarket, selectSimilarMarket } from "./build";
-import type { NearbyItem } from "./format";
-import { parseAddress, pinAddress, resolveZone, wardFromSourceUrl, type ZoneRow } from "./school-zones";
+import { todayJst, type NearbyItem } from "./format";
+import { kanjiToNumber, parseAddress, pinAddress, resolveZone, wardFromSourceUrl, type ZoneRow } from "./school-zones";
 import type { FactStepKey } from "./steps";
 
 /** 周りの施設（L）の種類。設計まとめ「周りの施設（L）の渡し方」の順 */
-export const FACILITY_KINDS = [
+const FACILITY_KINDS = [
   "小学校",
   "中学校",
   "保育園",
@@ -74,36 +74,12 @@ const CAR_M = 3000;
 /** 物件を探した方法などで、物件区分に合う区分 */
 const SEGMENT = { 中古: "中古戸建を買った世帯", 新築: "分譲戸建を買った世帯" } as const;
 
-/** 日本時間の今日（YYYY-MM-DD） */
-export function todayJst(now = new Date()): string {
-  return now.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-}
-
-const KANJI: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
-
-function kanjiNumber(text: string): number | null {
-  const m = /^([一二三四五六七八九])?(十)?([一二三四五六七八九])?$/.exec(text);
-  if (!m || text === "") return null;
-  if (!m[2]) return m[1] && !m[3] ? KANJI[m[1]] : null;
-  return (m[1] ? KANJI[m[1]] : 1) * 10 + (m[3] ? KANJI[m[3]] : 0);
-}
-
 /** 町の境界（D39）の町名を、町名別5歳階級人口（D10）の書き方にする：「青山七丁目」→「青山７丁目」 */
 export function toD10TownName(name: string): string {
   return name.replace(/([一二三四五六七八九十]+)丁目$/, (all, k: string) => {
-    const n = kanjiNumber(k);
+    const n = kanjiToNumber(k);
     return n === null ? all : `${String(n).replace(/\d/g, (d) => String.fromCharCode(d.charCodeAt(0) + 0xfee0))}丁目`;
   });
-}
-
-/**
- * クエリを1つずつ順に実行する。Supabase のプーラー（Transaction mode）経由で同時に投げると、postgres.js が最初に読む
- * 型の一覧（pg_type）が statement timeout で止められ、同じ接続の残りのクエリが返らなくなることがあった（2026-10-25）
- */
-async function inOrder<T extends unknown[]>(...tasks: { [K in keyof T]: () => PromiseLike<T[K]> }): Promise<T> {
-  const out: unknown[] = [];
-  for (const task of tasks) out.push(await task());
-  return out as T;
 }
 
 interface PropertyRow extends Omit<PropertyInput, "building_sqm" | "land_sqm"> {
@@ -162,8 +138,7 @@ export async function collect(sql: Sql, propertyId: number, today = todayJst(), 
       select distinct on (key) id, key, value, unit, as_of, basis from assumptions
       where effective_from <= ${today}::date order by key, effective_from desc
     `),
-    // 住み替えの印（uses_resale_down_payment）はマイグレーション 20261030110000 で足す列。反映前でも動くよう * で引く
-    () => sql<TargetInput[]>`select * from target_candidates order by id`,
+    () => sql<TargetInput[]>`select name, representative_age, definition, uses_resale_down_payment from target_candidates order by id`,
     () => sql<{ position: number; price_man_yen: number | null; address: string | null; building_sqm: string | null; land_sqm: string | null; building_age: number | null; distance_m: number | null }[]>`
       select position, price_man_yen, address, building_sqm, land_sqm, building_age, extensions.st_distance(geog, ${pt}) as distance_m
       from competitors where property_id = ${propertyId} order by position
@@ -212,7 +187,7 @@ type Point = PendingQuery<Row[]>;
 
 /**
  * 区×築年数の相場（D01）。物件のある区（市区町村コード）の戸建ての取引を引き、帯と年の範囲は selectMarket で決める
- * 戸建ての条件は docs/相場の出し方変更.md 3.3（2026-10-28 小林さんと決定）。用途が空（成約価格情報）なら構造で判断する
+ * 戸建ての条件は docs/履歴/相場の出し方変更.md 3.3（2026-10-28 小林さんと決定）。用途が空（成約価格情報）なら構造で判断する
  */
 async function collectMarket(sql: Sql, town: TownInfo | null, property: PropertyInput): Promise<{ market: MarketInput | null; similar: MarketInput | null } | null> {
   if (!town) return null;
@@ -240,7 +215,7 @@ async function collectMarket(sql: Sql, town: TownInfo | null, property: Property
     land_sqm: r.land_sqm === null ? null : Number(r.land_sqm),
   }));
   const band = ageBandOf(property.building_age);
-  // 広さの近い取引だけの相場も、同じ取引から出す（docs/相場の出し方変更.md 3.8）
+  // 広さの近い取引だけの相場も、同じ取引から出す（docs/履歴/相場の出し方変更.md 3.8）
   return { market: selectMarket(trades, band, latest.year), similar: selectSimilarMarket(trades, band, latest.year, property) };
 }
 
@@ -337,7 +312,7 @@ async function collectNearby(sql: Sql, pt: Point, ward: string | null): Promise<
 }
 
 /** バス停の点（P11）。P11 は事業者ごとに点がある */
-export interface BusPole {
+interface BusPole {
   name: string;
   distance_m: number;
   routes: number | null;
@@ -345,7 +320,7 @@ export interface BusPole {
 }
 
 /**
- * 同じ名前のバス停の点を1つの停留所にまとめる（docs/事実シートの修正_実装案.md 1.3）
+ * 同じ名前のバス停の点を1つの停留所にまとめる（docs/履歴/事実シートの修正_実装案.md 1.3）
  * 同じ名前の点は、同じ停留所の別の事業者とみなす。距離はいちばん近い点、系統数は足す（事業者が違うので二重に数えない）
  * 1km以内の点だけに使う。市内には同じ名前の別の場所の停留所もあるため。並びは近い順
  */

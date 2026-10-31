@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getSql } from "../../../../lib/db";
+import type { StrategyResult } from "../../../../lib/agents/run";
+import { getSql, inOrder } from "../../../../lib/db";
 import type { DatasetInfo } from "../../../../lib/facts/build";
+import { formatNumber } from "../../../../lib/facts/format";
 import type { FactSheet } from "../../../../lib/facts/types";
+import { parsePropertyId } from "../../../../lib/property";
 import { sourceList, usedFactIds } from "../../../../lib/report";
 import { card, emptyState } from "../../../_lib/ui";
-import Report, { type StrategyResult } from "./Report";
+import Report from "./Report";
 import StrategyRunner, { type RunStatus } from "./StrategyRunner";
 
 // ⑤販売戦略レポート（docs/設計まとめ.md「⑤画面の表示」）。[id] は物件の番号
@@ -28,8 +31,8 @@ interface PropertyRow {
 
 export default async function StrategyDetailPage({ params }: PageProps<"/strategy/[id]">) {
   const { id } = await params;
-  const propertyId = Number(id);
-  if (!Number.isInteger(propertyId) || propertyId <= 0) notFound();
+  const propertyId = parsePropertyId(id);
+  if (propertyId === null) notFound();
 
   const sql = getSql();
   const [p] = await sql<PropertyRow[]>`
@@ -53,10 +56,10 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
 
   let report: React.ReactNode = <div className={emptyState}>まだ販売戦略がありません。上の「戦略を作る」を押してください。</div>;
   if (done) {
-    const [datasets, media] = await Promise.all([
-      sql<(DatasetInfo & { attribution: string | null })[]>`select id, name, provider, as_of, row_count, attribution from datasets`,
-      sql<{ id: string; name: string }[]>`select id, name from media`,
-    ]);
+    const [datasets, media] = await inOrder(
+      () => sql<(DatasetInfo & { attribution: string | null })[]>`select id, name, provider, as_of, row_count, attribution from datasets`,
+      () => sql<{ id: string; name: string }[]>`select id, name from media`,
+    );
     const facts = done.content.事実;
     const { rows, credits } = sourceList(facts, usedFactIds(done.result.戦略, done.result.媒体), [...datasets]);
     report = (
@@ -101,7 +104,7 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
         <div className="text-[18px] font-bold text-ink mt-0.5">{p.address}</div>
         <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-[13px] text-body">
           <span>
-            価格 <b className="text-ink text-[15px]">{p.price_man_yen.toLocaleString("ja-JP")}万円</b>
+            価格 <b className="text-ink text-[15px]">{formatNumber(p.price_man_yen)}万円</b>
           </span>
           <span>間取り {p.layout}</span>
           <span>

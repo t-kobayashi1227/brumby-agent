@@ -13,7 +13,7 @@ export interface LoanAssumptions {
   maxAgeAtPayoff: number;
 }
 
-export interface LoanResult {
+interface LoanResult {
   /** 借入額（円） */
   principalYen: number;
   /** 返済期間（年） */

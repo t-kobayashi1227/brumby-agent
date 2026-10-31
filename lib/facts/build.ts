@@ -61,7 +61,7 @@ export interface TownInfo {
   city_code: string;
 }
 
-export interface AgeBand {
+interface AgeBand {
   from: number;
   /** 上限なし（築50年以上）は null */
   to: number | null;
@@ -86,7 +86,7 @@ export interface MarketInput {
   trades: MarketTrade[];
 }
 
-export interface LandPriceInput {
+interface LandPriceInput {
   dataset_id: string;
   address: string | null;
   price_per_sqm: number | null;
@@ -111,7 +111,7 @@ export interface NearbyKindInput {
   datasetIds: string[];
 }
 
-export interface StationInput {
+interface StationInput {
   name: string;
   lines: string[];
   distance_m: number;
@@ -125,7 +125,7 @@ export interface BusStopInput extends NearbyItem {
   operators: string[];
 }
 
-export interface BusInput {
+interface BusInput {
   within1km: NearbyItem[];
   nearest: BusStopInput | null;
   wardAverage: number | null;
@@ -205,7 +205,7 @@ export interface CompetitorInput {
   distance_m: number | null;
 }
 
-export interface MediaRow {
+interface MediaRow {
   id: string;
   name: string;
   category: string;
@@ -221,7 +221,7 @@ export interface Collected {
   datasets: Record<string, DatasetInfo>;
   town: TownInfo | null;
   market: MarketInput | null;
-  /** 広さの近い取引だけの相場（docs/相場の出し方変更.md 3.8） */
+  /** 広さの近い取引だけの相場（docs/履歴/相場の出し方変更.md 3.8） */
   similarMarket: MarketInput | null;
   landPrice: LandPriceInput | null;
   zones: ZoneHit[];
@@ -316,11 +316,11 @@ export function bandLabel(b: AgeBand): string {
   return b.to === null ? `築${b.from}年以上` : `築${b.from}〜${b.to}年`;
 }
 
-/** 直近の年数と、直近だけで足りるとみなす件数（docs/相場の出し方変更.md 3.5） */
-export const MARKET_RECENT_YEARS = 5;
-export const MARKET_MIN_COUNT = 20;
+/** 直近の年数と、直近だけで足りるとみなす件数（docs/履歴/相場の出し方変更.md 3.5） */
+const MARKET_RECENT_YEARS = 5;
+const MARKET_MIN_COUNT = 20;
 /** 1坪の面積（㎡）。400/121 ≒ 3.30578 */
-export const TSUBO_SQM = 400 / 121;
+const TSUBO_SQM = 400 / 121;
 
 /** 1坪あたりの価格（円） */
 export function pricePerTsubo(priceYen: number, floorSqm: number): number {
@@ -343,12 +343,12 @@ export function selectMarket(rows: MarketTrade[], band: AgeBand, latestYear: num
   return { band, fromYear: Math.min(...years), toYear: Math.max(...years), trades };
 }
 
-/** 広さの近い取引の範囲（物件の何倍か）と、件数が少ないとみなす件数（docs/相場の出し方変更.md 3.8） */
-export const SIMILAR_SIZE_RATIO = { min: 0.7, max: 1.3 } as const;
-export const SIMILAR_MIN_COUNT = 10;
+/** 広さの近い取引の範囲（物件の何倍か）と、件数が少ないとみなす件数（docs/履歴/相場の出し方変更.md 3.8） */
+const SIMILAR_SIZE_RATIO = { min: 0.7, max: 1.3 } as const;
+const SIMILAR_MIN_COUNT = 10;
 
 /** 物件の面積から、広さの近い取引の範囲（㎡） */
-export function similarRange(sqm: number): { min: number; max: number } {
+function similarRange(sqm: number): { min: number; max: number } {
   return { min: sqm * SIMILAR_SIZE_RATIO.min, max: sqm * SIMILAR_SIZE_RATIO.max };
 }
 
@@ -385,7 +385,7 @@ function marketFacts(c: Collected): FactDraft[] {
     land: `区の相場の取引の土地面積（${ward}・${band}）`,
   };
   if (!m) return [...Object.values(labels).map((l) => fact("M", l, null, src)), similarFact(c, ward, band, pricePerTsubo(p.price_man_yen * 10_000, p.building_sqm)), landFact(c)];
-  // 区×築年数帯の、延床の坪単価の中央値で比べる。総額の相場は出さない（docs/相場の出し方変更.md 3.6）
+  // 区×築年数帯の、延床の坪単価の中央値で比べる。総額の相場は出さない（docs/履歴/相場の出し方変更.md 3.6）
   const period = { ...src, 時点: `${m.fromYear}〜${m.toYear}` };
   const unitMedian = median(m.trades.map((t) => pricePerTsubo(t.price, t.floor_sqm)));
   const own = pricePerTsubo(p.price_man_yen * 10_000, p.building_sqm);
@@ -401,7 +401,7 @@ function marketFacts(c: Collected): FactDraft[] {
   ];
 }
 
-/** 広さの近い取引の相場（docs/相場の出し方変更.md 3.8）。相場比は出さず、物件の坪単価を並べる */
+/** 広さの近い取引の相場（docs/履歴/相場の出し方変更.md 3.8）。相場比は出さず、物件の坪単価を並べる */
 function similarFact(c: Collected, ward: string, band: string, own: number): FactDraft {
   const p = c.property;
   const floor = similarRange(p.building_sqm);
@@ -672,7 +672,7 @@ function buyerFacts(c: Collected): FactDraft[] {
   });
   const incomeBins = b.income.map((r) => ({ item: r.item, pct: r.value }));
   const b02 = c.datasets.B02?.as_of ?? "不明";
-  // 年収分布は全国の値（新潟県の分布ではない）。項目名と出典に「全国」と書く（docs/事実シートの修正_実装案.md 2.2）
+  // 年収分布は全国の値（新潟県の分布ではない）。項目名と出典に「全国」と書く（docs/履歴/事実シートの修正_実装案.md 2.2）
   const shareSrc = { 出典: `${b.incomeSource ?? "住宅市場動向調査"}（全国、${b.segment}の年収分布）から計算`, 時点: b02 };
   const share = (incomeYen: number) => (incomeBins.length ? shareAboveIncome(incomeBins, incomeYen / 10_000) : null);
 
@@ -698,7 +698,7 @@ function buyerFacts(c: Collected): FactDraft[] {
   const termOf = (t: TargetInput) => loanTerm(la, t.representative_age);
 
   // ターゲット候補ごとの返済（代表年齢から返済期間を決める）。返済期間が同じ候補は数字も同じなので1行にまとめる
-  // （docs/事実シートの修正_実装案.md 2.3。指示文は候補名で答えるだけなので、行に候補名を並べれば足りる）
+  // （docs/履歴/事実シートの修正_実装案.md 2.3。指示文は候補名で答えるだけなので、行に候補名を並べれば足りる）
   const terms = [...new Set(c.targets.map(termOf))].sort((x, y) => y - x);
   for (const term of terms) {
     const group = c.targets.filter((t) => termOf(t) === term);
@@ -750,7 +750,7 @@ function buyerFacts(c: Collected): FactDraft[] {
 
 /**
  * 割合の内訳を並べ、合計が100%に足りなければ残りを「無回答など」として足す（AI が残りを勝手に読まないように）
- * 残りは 0.1% 単位で丸めて 0 より大きいときだけ（docs/事実シートの修正_実装案.md 2.5）
+ * 残りは 0.1% 単位で丸めて 0 より大きいときだけ（docs/履歴/事実シートの修正_実装案.md 2.5）
  */
 export function withRemainder(rows: StatRow[]): string {
   const list = rows.map((r) => `${r.item} ${formatPct(r.value)}`);

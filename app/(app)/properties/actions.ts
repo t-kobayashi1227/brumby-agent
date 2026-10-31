@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSql, type Sql } from "../../../lib/db";
-import { geocodeAddress } from "../../../lib/geocode";
-import { FLOORS, parseLayout, PROPERTY_CLASSES, RENOVATION_PARTS, TRANSPORT_MODES } from "../../../lib/property";
+import { geocodeAddress, isInNiigata } from "../../../lib/geocode";
+import { FLOORS, parseLayout, parsePropertyId, PROPERTY_CLASSES, RENOVATION_PARTS, TRANSPORT_MODES } from "../../../lib/property";
 
 // ①物件情報の入力の保存（docs/設計まとめ.md「①物件情報の入力」）
 // 保存すると住所から位置（国土地理院 住所検索）を取る。ずれていたら、物件の画面の地図でピンを置き直す
@@ -217,9 +217,9 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
 
 /** 地図で置き直したピンの位置を保存する */
 export async function setLocation(propertyId: number, lon: number, lat: number): Promise<PropertyFormState> {
-  if (!Number.isInteger(Number(propertyId)) || Number(propertyId) <= 0) return { error: "物件の番号が正しくありません。画面を読み込み直してください" };
+  if (parsePropertyId(propertyId) === null) return { error: "物件の番号が正しくありません。画面を読み込み直してください" };
   if (!Number.isFinite(lon) || !Number.isFinite(lat)) return { error: "位置が正しくありません" };
-  if (lon < 137.5 || lon > 140.0 || lat < 36.7 || lat > 38.6) return { error: "新潟県の外の位置です（PoCは新潟県内だけ）" };
+  if (!isInNiigata(lon, lat)) return { error: "新潟県の外の位置です（PoCは新潟県内だけ）" };
   const rows = await getSql()`
     update properties
     set geog = extensions.st_setsrid(extensions.st_point(${lon}, ${lat}), 4326)::extensions.geography, location_source = '手で修正'

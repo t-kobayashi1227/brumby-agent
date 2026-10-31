@@ -19,13 +19,6 @@ export const HomeIcon = (p: IconProps) => (
   </Svg>
 );
 
-export const DocIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" />
-    <path d="M14 3v5h5M8.5 13h7M8.5 17h5" />
-  </Svg>
-);
-
 export const ChartIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M4 20h16" />
@@ -116,13 +109,6 @@ export const ChevronDownIcon = (p: IconProps) => (
 export const ArrowRightIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M5 12h14M13 6l6 6-6 6" />
-  </Svg>
-);
-
-export const CalendarIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <rect x="4" y="5" width="16" height="15" rx="2" />
-    <path d="M4 10h16M8 3v4M16 3v4" />
   </Svg>
 );
 

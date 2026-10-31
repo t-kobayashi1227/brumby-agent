@@ -6,7 +6,7 @@ import { DEPARTMENTS, departmentKind } from "../../lib/facts/collect";
 // 同じ区の町ごとに、町の中心から 1km 以内の施設の数を種類ごとに数え、その平均を ward_facility_averages に入れる
 // 事実シートの「比較」（例：西区の町の平均 2.1件）に使う。施設を入れ直したら、計算し直す
 // バス停は停留所の名前の数で数える（P11 は事業者ごとに点があるため。lib/facts/collect.ts の groupBusStops と同じ数え方）
-// 診療科ごと（内科のある病院・診療所など）も「診療科:内科」の kind で入れる（docs/事実シートの修正_実装案.md 3章）
+// 診療科ごと（内科のある病院・診療所など）も「診療科:内科」の kind で入れる（docs/履歴/事実シートの修正_実装案.md 3章）
 // 水面（hcode 8154）は町に数えない。既定は新潟市の区だけ。area=pref で県内の市町村も（市町村全体を1つの「区」として）計算する
 
 const RADIUS_M = 1000;

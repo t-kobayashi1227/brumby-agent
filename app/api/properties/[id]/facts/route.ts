@@ -1,5 +1,6 @@
 import { getSql } from "../../../../../lib/db";
 import { createFactSheet } from "../../../../../lib/facts";
+import { parsePropertyId } from "../../../../../lib/property";
 
 // 事実シートを作って保存する（docs/設計まとめ.md「③事実シート」）。画面に進み具合を出すため、1行1つの JSON で段階を順に返す
 //   {"step":"town"} … {"done":true,"id":3,"count":119,"missing":["M-01"]}  失敗したら {"error":"…"}
@@ -9,8 +10,8 @@ import { createFactSheet } from "../../../../../lib/facts";
 export const maxDuration = 60;
 
 export async function POST(_req: Request, ctx: RouteContext<"/api/properties/[id]/facts">) {
-  const propertyId = Number((await ctx.params).id);
-  if (!Number.isInteger(propertyId) || propertyId <= 0) return Response.json({ error: "物件の番号が正しくありません" }, { status: 400 });
+  const propertyId = parsePropertyId((await ctx.params).id);
+  if (propertyId === null) return Response.json({ error: "物件の番号が正しくありません" }, { status: 400 });
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({

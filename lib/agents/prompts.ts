@@ -19,7 +19,7 @@ export function readPrompt(file: string): string {
   return readFileSync(path.join(process.cwd(), "prompts", file), "utf8").replace(/\r\n/g, "\n").trimEnd();
 }
 
-export interface AgentPrompt {
+interface AgentPrompt {
   file: string;
   system: string;
   sha256: string;

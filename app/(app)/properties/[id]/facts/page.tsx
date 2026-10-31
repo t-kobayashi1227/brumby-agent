@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSql } from "../../../../../lib/db";
 import type { FactSheet } from "../../../../../lib/facts/types";
+import { parsePropertyId } from "../../../../../lib/property";
 import { btnPrimary, card, emptyState } from "../../../../_lib/ui";
 import FactSheetRunner from "./FactSheetRunner";
 
@@ -20,8 +21,8 @@ const STATUS_CLASS: Record<string, string> = {
 export default async function FactSheetPage({ params, searchParams }: PageProps<"/properties/[id]/facts">) {
   const { id } = await params;
   const sp = await searchParams;
-  const propertyId = Number(id);
-  if (!Number.isInteger(propertyId) || propertyId <= 0) notFound();
+  const propertyId = parsePropertyId(id);
+  if (propertyId === null) notFound();
 
   const sql = getSql();
   const [property] = await sql<{ code: string }[]>`select code from properties where id = ${propertyId}`;

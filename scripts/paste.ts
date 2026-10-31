@@ -1,4 +1,4 @@
-// 3回の形（docs/戦略の質を上げる修正案.md）を、API を使わず claude.ai に貼り付けて試すための文を作る：npm run paste -- <物件の番号>
+// 3回の形（docs/履歴/戦略の質を上げる修正案.md）を、API を使わず claude.ai に貼り付けて試すための文を作る：npm run paste -- <物件の番号>
 // 何度でも実行してよい。data/out/paste/<物件の番号>/ にある答えを見て、次に貼る文を作る
 //   1. 1_戦略.txt を作る → claude.ai に貼り、返った JSON を 戦略.json に保存
 //   2. もう一度実行 → 答えの形を確かめ、2_媒体.txt を作る → 返った JSON を 媒体.json に保存
@@ -18,6 +18,7 @@ import { simulate } from "../lib/calc/budget";
 import { getSql } from "../lib/db";
 import { createFactSheet } from "../lib/facts";
 import type { FactSheet } from "../lib/facts/types";
+import { parsePropertyId } from "../lib/property";
 import { reportHtml, type PasteReport } from "./paste-report";
 
 /** API では system に入れる指示文と、structured outputs で決める答えの形を、1つの文にまとめる */
@@ -69,8 +70,8 @@ function readAnswer<S extends ZodType>(file: string, schema: S): z.infer<S> | nu
 }
 
 async function main() {
-  const propertyId = Number(process.argv[2]);
-  if (!Number.isInteger(propertyId) || propertyId <= 0) throw new Error("物件の番号を指定してください（例：npm run paste -- 1）");
+  const propertyId = parsePropertyId(process.argv[2] ?? "");
+  if (propertyId === null) throw new Error("物件の番号を指定してください（例：npm run paste -- 1）");
   const sql = getSql();
   const dir = path.join("data", "out", "paste", String(propertyId));
   mkdirSync(dir, { recursive: true });

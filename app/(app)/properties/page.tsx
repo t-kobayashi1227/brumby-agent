@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getSql } from "../../../lib/db";
+import { formatNumber } from "../../../lib/facts/format";
 import { PlusIcon } from "../../_components/icons";
 import { btnAction, card, emptyState, tableHead } from "../../_lib/ui";
 
@@ -70,7 +71,7 @@ export default async function PropertyListPage() {
               <div className="font-bold">{p.code}</div>
               <div>{p.address}</div>
               <div>{p.property_class}</div>
-              <div>{p.price_man_yen.toLocaleString("ja-JP")}万円</div>
+              <div>{formatNumber(p.price_man_yen)}万円</div>
               <div>{p.layout}</div>
               <div className={p.status ? STATUS[p.status]?.className : "text-muted"}>
                 {p.status ? (

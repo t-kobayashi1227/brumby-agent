@@ -1,21 +1,17 @@
 import { after } from "next/server";
 import { runStrategy } from "../../../../../lib/agents/run";
 import { getSql } from "../../../../../lib/db";
+import { parsePropertyId } from "../../../../../lib/property";
 
 // 戦略を作る（④の戦略・媒体・確認の3回の呼び出し）。数分かかるので、POST は実行を始めて id だけ返し、残りは after で動かし続ける
 // 画面は GET で進み具合（status・stage）を数秒おきに読み、終わったらレポートを読み直す
-// Vercel に置くときは、この関数の実行時間の上限（maxDuration）が実行の長さに足りるか確かめる（段階5では課題として残す）
+// Vercel に置くときは、この関数の実行時間の上限（maxDuration）が実行の長さに足りるか確かめる
 
 export const maxDuration = 300;
 
-function propertyIdOf(raw: string): number | null {
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : null;
-}
-
 export async function POST(_req: Request, ctx: RouteContext<"/api/properties/[id]/strategy">) {
-  const propertyId = propertyIdOf((await ctx.params).id);
-  if (!propertyId) return Response.json({ error: "物件の番号が正しくありません" }, { status: 400 });
+  const propertyId = parsePropertyId((await ctx.params).id);
+  if (propertyId === null) return Response.json({ error: "物件の番号が正しくありません" }, { status: 400 });
 
   let started: (runId: number) => void = () => {};
   const runIdReady = new Promise<number>((resolve) => (started = resolve));
@@ -32,8 +28,8 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/properties/[id
 }
 
 export async function GET(_req: Request, ctx: RouteContext<"/api/properties/[id]/strategy">) {
-  const propertyId = propertyIdOf((await ctx.params).id);
-  if (!propertyId) return Response.json({ error: "物件の番号が正しくありません" }, { status: 400 });
+  const propertyId = parsePropertyId((await ctx.params).id);
+  if (propertyId === null) return Response.json({ error: "物件の番号が正しくありません" }, { status: 400 });
   const [run] = await getSql()<{ id: string; status: string; stage: string | null; error: string | null; cost_usd: string; started_at: Date | null }[]>`
     select id, status, stage, error, cost_usd, started_at from strategy_runs where property_id = ${propertyId} order by created_at desc limit 1
   `;

@@ -4,11 +4,10 @@
 
 /** 媒体担当 */
 export const MODEL = "claude-haiku-5-5";
-/** 戦略担当と確認担当（docs/戦略の質を上げる修正案.md 4.1） */
+/** 戦略担当と確認担当（docs/履歴/戦略の質を上げる修正案.md 4.1） */
 export const STRATEGY_MODEL = "claude-sonnet-5-5";
 
 export type Model = typeof MODEL | typeof STRATEGY_MODEL;
-export const MODELS: readonly Model[] = [MODEL, STRATEGY_MODEL];
 
 interface Rate {
   input: number;

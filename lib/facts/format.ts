@@ -2,11 +2,21 @@
 
 /**
  * 直線距離：1km未満は10m単位（直線650m）、1km以上は0.1km単位（直線1.1km）
- * 1km未満は丸めても1000mにせず990mにする。1km以内の一覧に「直線1000m」と出て境目の外に見えないように（docs/事実シートの修正_実装案.md 1.5）
+ * 1km未満は丸めても1000mにせず990mにする。1km以内の一覧に「直線1000m」と出て境目の外に見えないように（docs/履歴/事実シートの修正_実装案.md 1.5）
  */
 export function formatDistance(meters: number): string {
   if (meters < 1000) return `直線${Math.min(990, Math.round(meters / 10) * 10)}m`;
   return `直線${(Math.round(meters / 100) / 10).toFixed(1)}km`;
+}
+
+/** 日本時間の今日（YYYY-MM-DD） */
+export function todayJst(now = new Date()): string {
+  return now.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+}
+
+/** 日本時間の ISO 形式（2026-10-23T15:30:00+09:00） */
+export function nowJstIso(now = new Date()): string {
+  return `${new Date(now.getTime() + 9 * 3600_000).toISOString().slice(0, 19)}+09:00`;
 }
 
 /** 3桁ごとのカンマ */
@@ -41,7 +51,7 @@ export interface NearbyItem {
 }
 
 /** 1km以内の一覧に出す数（近い順） */
-export const LIST_LIMIT = 5;
+const LIST_LIMIT = 5;
 
 /**
  * 周りの施設の値（設計まとめ「周りの施設（L）の渡し方」）

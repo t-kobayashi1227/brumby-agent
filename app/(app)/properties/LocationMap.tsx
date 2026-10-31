@@ -8,7 +8,6 @@ import { card, btnPrimary, btnSecondary } from "../../_lib/ui";
 import { regeocode, setLocation, type PropertyFormState } from "./actions";
 
 // 物件の位置を地図のピンで確かめる（docs/設計まとめ.md「入力画面の動き」の位置の確認）。地図は MapLibre GL＋国土地理院の淡色地図（出典を表示する）
-// 前の設計（legacy/app/(app)/properties/LocationMap.tsx）から流用
 // 住所検索がずれていたら、地図をクリックしてピンを置き直し「この位置で確定」
 // 確定したら事実シートの画面へ移り、周辺情報の取得を自動で始める（?auto=1）
 

@@ -21,8 +21,3 @@
 @theme inline {
   --font-sans: var(--font-noto-sans-jp), "Noto Sans JP", sans-serif;
 }
-
-/* Diagonal-stripe placeholder for photos, maps and previews. */
-@utility bg-stripes {
-  background-image: repeating-linear-gradient(135deg, #eef1f6, #eef1f6 10px, #e2e6ee 10px, #e2e6ee 20px);
-}
