@@ -39,6 +39,8 @@
 | `strategy_runs` | 戦略の実行1回分（進み具合、合計の費用、⑤に渡す結果） | ④処理の流れ | 段階4 |
 | `agent_calls` | エージェントの呼び出し1回ごとの入力・出力・トークン数・費用 | ④ | 段階4 |
 | `check_results` | 点検の結果（プログラムとAI） | ④確認のチェック項目 | 段階4 |
+| `sales_records` | 販売の結果（1物件1行。状況・価格・成約・買主・最初に知った媒体） | 販売の記録 | 「販売の記録」の画面から |
+| `media_results` | 媒体ごとの実績（物件×媒体×期間。費用・表示・閲覧・問い合わせ・内見） | 販売の記録 | 「販売の記録」の画面から |
 
 ## つながり
 
@@ -50,11 +52,13 @@ datasets ─┬─ towns ── transactions（town_key_code）
 
 properties ─┬─ property_transports（最大2）
             ├─ competitors（任意・複数）
+            ├─ sales_records（1物件1行）
+            ├─ media_results（何行でも。media_id で媒体一覧を指す）
             └─ fact_sheets ── strategy_runs ─┬─ agent_calls
                                              └─ check_results
 ```
 
-物件を削除すると、交通・競合・事実シート・実行記録・点検の結果も一緒に消えます（`on delete cascade`）。
+物件を削除すると、交通・競合・事実シート・実行記録・点検の結果・販売の記録も一緒に消えます（`on delete cascade`）。
 
 ## 表ごとの補足
 

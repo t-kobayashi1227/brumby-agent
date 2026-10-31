@@ -1,6 +1,6 @@
 // Single source of truth for page URLs, header titles and sidebar navigation.
 
-import { GearIcon, ListIcon } from "../_components/icons";
+import { GearIcon, ListIcon, PencilIcon } from "../_components/icons";
 
 interface PageDef {
   href: string;
@@ -13,6 +13,7 @@ interface PageDef {
 export const pages: PageDef[] = [
   { href: "/properties", title: "物件一覧" },
   { href: "/properties/new", title: "物件情報の入力", ownHeading: true },
+  { href: "/records", title: "販売の記録" },
   { href: "/settings", title: "設定" },
 ];
 
@@ -23,6 +24,7 @@ export function findPage(pathname: string): PageDef | undefined {
   if (/^\/strategy\/\d+$/.test(pathname)) return { href: pathname, title: "販売戦略の詳細" };
   if (/^\/properties\/\d+$/.test(pathname)) return { href: pathname, title: "物件情報の入力（登録した物件）" };
   if (/^\/properties\/\d+\/facts$/.test(pathname)) return { href: pathname, title: "事実シート" };
+  if (/^\/records\/\d+$/.test(pathname)) return { href: pathname, title: "販売の記録（物件ごと）" };
   return undefined;
 }
 
@@ -37,6 +39,7 @@ interface NavItem {
 // 販売戦略のレポート（/strategy/[id]）は物件ごとの画面なので、「物件一覧」を選択中にする
 export const navItems: NavItem[] = [
   { label: "物件一覧", href: "/properties", icon: ListIcon, alsoActive: ["/strategy"] },
+  { label: "販売の記録", href: "/records", icon: PencilIcon },
   { label: "設定", href: "/settings", icon: GearIcon },
 ];
 
