@@ -378,41 +378,48 @@ function marketFacts(c: Collected): FactDraft[] {
   const p = c.property;
   const ward = c.town?.ward ?? "区";
   const band = bandLabel(m?.band ?? ageBandOf(p.building_age));
+  const area = `${ward}・${band}`;
   const labels = {
-    unit: `区の相場（${ward}・${band}・戸建・延床の坪単価）`,
-    ratio: `相場比（${ward}の${band}の延床の坪単価の中央値に対する、物件の坪単価）`,
-    floor: `区の相場の取引の延床面積（${ward}・${band}）`,
-    land: `区の相場の取引の土地面積（${ward}・${band}）`,
+    unit: `延床の坪単価（${area}の戸建の相場と比べる）`,
+    ratio: `相場比（${area}の延床の坪単価の中央値に対する、物件の坪単価）`,
+    floor: `延床面積（${area}の相場の取引と比べる）`,
+    land: `土地面積（${area}の相場の取引と比べる）`,
   };
-  if (!m) return [...Object.values(labels).map((l) => fact("M", l, null, src)), similarFact(c, ward, band, pricePerTsubo(p.price_man_yen * 10_000, p.building_sqm)), landFact(c)];
+  const own = pricePerTsubo(p.price_man_yen * 10_000, p.building_sqm);
+  if (!m) return [...Object.values(labels).map((l) => fact("M", l, null, src)), similarFact(c, ward, band, own), landFact(c)];
   // 区×築年数帯の、延床の坪単価の中央値で比べる。総額の相場は出さない（docs/履歴/相場の出し方変更.md 3.6）
+  // 物件の値を「値」に、相場（中央値）を「比較」に入れる。相場が出なければ「取得できず」（2026-10-31 小林さんと決定）
   const period = { ...src, 時点: `${m.fromYear}〜${m.toYear}` };
   const unitMedian = median(m.trades.map((t) => pricePerTsubo(t.price, t.floor_sqm)));
-  const own = pricePerTsubo(p.price_man_yen * 10_000, p.building_sqm);
   const floorMedian = median(m.trades.map((t) => t.floor_sqm));
   const landMedian = median(m.trades.flatMap((t) => (t.land_sqm === null ? [] : [t.land_sqm])));
+  const vs = (value: string, med: number | null, format: (n: number) => string, count = "") =>
+    med !== null ? { 値: value, 比較: `${area}の中央値 ${format(med)}${count}` } : { 値: null };
+  const row = (label: string, r: { 値: string | null; 比較?: string }) => fact("M", label, r.値, period, { 比較: r.比較 });
   return [
-    fact("M", labels.unit, unitMedian !== null ? `中央値${formatTsubo(unitMedian)}（${m.trades.length}件）` : null, period),
-    fact("M", labels.ratio, unitMedian !== null ? `${(own / unitMedian).toFixed(2)}倍（物件${formatTsubo(own)}）` : null, period),
-    fact("M", labels.floor, floorMedian !== null ? `中央値${sqm(floorMedian)}（物件${sqm(p.building_sqm)}）` : null, period),
-    fact("M", labels.land, landMedian !== null ? `中央値${sqm(landMedian)}（物件${sqm(p.land_sqm)}）` : null, period),
+    row(labels.unit, vs(`物件${formatTsubo(own)}`, unitMedian, formatTsubo, `（${m.trades.length}件）`)),
+    fact("M", labels.ratio, unitMedian !== null ? `${(own / unitMedian).toFixed(2)}倍` : null, period),
+    row(labels.floor, vs(`物件${sqm(p.building_sqm)}`, floorMedian, sqm)),
+    row(labels.land, vs(`物件${sqm(p.land_sqm)}`, landMedian, sqm)),
     similarFact(c, ward, band, own),
     landFact(c),
   ];
 }
 
-/** 広さの近い取引の相場（docs/履歴/相場の出し方変更.md 3.8）。相場比は出さず、物件の坪単価を並べる */
+/** 広さの近い取引の相場（docs/履歴/相場の出し方変更.md 3.8）。相場比は出さず、物件の坪単価を「値」、相場を「比較」に入れる */
 function similarFact(c: Collected, ward: string, band: string, own: number): FactDraft {
   const p = c.property;
   const floor = similarRange(p.building_sqm);
   const land = similarRange(p.land_sqm);
-  const label = `広さの近い取引の相場（${ward}・${band}・延床${Math.round(floor.min)}〜${Math.round(floor.max)}㎡・土地${Math.round(land.min)}〜${Math.round(land.max)}㎡・延床の坪単価）`;
+  const label = `延床の坪単価（広さの近い取引の相場と比べる：${ward}・${band}・延床${Math.round(floor.min)}〜${Math.round(floor.max)}㎡・土地${Math.round(land.min)}〜${Math.round(land.max)}㎡）`;
   const s = c.similarMarket;
   const src = sourcesOf(c, ["D01"]);
   const unitMedian = s ? median(s.trades.map((t) => pricePerTsubo(t.price, t.floor_sqm))) : null;
   if (!s || unitMedian === null) return fact("M", label, null, src);
   const few = s.trades.length < SIMILAR_MIN_COUNT ? "。件数が少ない" : "";
-  return fact("M", label, `中央値${formatTsubo(unitMedian)}（${s.trades.length}件${few}。物件${formatTsubo(own)}）`, { ...src, 時点: `${s.fromYear}〜${s.toYear}` });
+  return fact("M", label, `物件${formatTsubo(own)}`, { ...src, 時点: `${s.fromYear}〜${s.toYear}` }, {
+    比較: `広さの近い取引の中央値 ${formatTsubo(unitMedian)}（${s.trades.length}件${few}）`,
+  });
 }
 
 function landFact(c: Collected): FactDraft {
@@ -560,10 +567,17 @@ function schoolFact(c: Collected, label: string, s: SchoolInput): FactDraft {
 
 // ---- L 生活施設 ----
 
+/**
+ * 区の町の平均と比べない施設。通うのは1か所で、数の多さが売りにならないもの（2026-10-31 小林さんと決定）
+ * 学校は学区（S）、保育・学童は最寄りの距離で判断する。比べるのは買い物・医療・公園（とバス停）
+ */
+export const NO_WARD_COMPARE = new Set(["小学校", "中学校", "保育園", "地域型保育", "幼稚園", "認定こども園", "放課後児童クラブ", "図書館", "役所", "大規模小売店舗"]);
+
 function nearbyFact(c: Collected, f: NearbyKindInput): FactDraft {
   const ward = c.town?.ward;
+  const compare = f.wardAverage !== null && ward && !NO_WARD_COMPARE.has(f.label);
   return fact("L", `${f.label}（1km以内）`, formatNearby(f.within1km, f.nearest3km), sourcesOf(c, f.datasetIds), {
-    比較: f.wardAverage !== null && ward ? `${ward}の町の平均 ${f.wardAverage.toFixed(1)}件` : undefined,
+    比較: compare ? `${ward}の町の平均 ${f.wardAverage!.toFixed(1)}件` : undefined,
   });
 }
 

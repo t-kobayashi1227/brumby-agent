@@ -125,6 +125,7 @@ function sample(overrides: Partial<Collected> = {}): Collected {
         datasetIds: ["D22"],
       },
       { label: "スーパー", within1km: [], nearest3km: { name: "架空スーパー", distance_m: 1140 }, wardAverage: 2.1, datasetIds: ["D28", "D29"] },
+      { label: "小学校", within1km: [{ name: "架空小学校", distance_m: 703 }], nearest3km: null, wardAverage: 1.3, datasetIds: ["D15"] },
     ],
     departments: [
       { label: "小児科のある病院・診療所", within1km: [], nearest3km: null, wardAverage: null, datasetIds: ["D30"] },
@@ -410,30 +411,28 @@ describe("事実シートの組み立て", () => {
     expect(find(facts, "広告予算の総額").値).toBe("入力なし");
   });
 
-  it("相場（M）：区×築年数の延床の坪単価の中央値と相場比、延床・土地面積", () => {
-    const m = find(facts, /^区の相場（/);
-    expect(m).toMatchObject({
+  it("相場（M）：物件の値を「値」、区×築年数の中央値を「比較」に入れ、相場比を出す", () => {
+    expect(find(facts, /^延床の坪単価（西区・築20〜29年の戸建の相場と比べる）/)).toMatchObject({
       id: "M-01",
-      項目: "区の相場（西区・築20〜29年・戸建・延床の坪単価）",
-      値: "中央値60.4万円/坪（4件）",
+      値: "物件77.7万円/坪",
+      比較: "西区・築20〜29年の中央値 60.4万円/坪（4件）",
       時点: "2015〜2026",
       出典: "不動産情報ライブラリ XIT001",
     });
-    expect(m).not.toHaveProperty("比較");
-    expect(find(facts, /^相場比（西区/)).toMatchObject({
-      id: "M-02",
-      項目: "相場比（西区の築20〜29年の延床の坪単価の中央値に対する、物件の坪単価）",
-      値: "1.29倍（物件77.7万円/坪）",
-    });
-    expect(find(facts, /^区の相場の取引の延床面積/)).toMatchObject({ id: "M-03", 値: "中央値105㎡（物件105.5㎡）", 時点: "2015〜2026" });
+    // 相場比は比べた結果なので、比較は付けない
+    const ratio = find(facts, /^相場比（西区/);
+    expect(ratio).toMatchObject({ id: "M-02", 項目: "相場比（西区・築20〜29年の延床の坪単価の中央値に対する、物件の坪単価）", 値: "1.29倍" });
+    expect(ratio).not.toHaveProperty("比較");
+    expect(find(facts, /^延床面積（/)).toMatchObject({ id: "M-03", 値: "物件105.5㎡", 比較: "西区・築20〜29年の中央値 105㎡", 時点: "2015〜2026" });
     // 土地面積の無い取引は除いて中央値を出す
-    expect(find(facts, /^区の相場の取引の土地面積/)).toMatchObject({ id: "M-04", 値: "中央値200㎡（物件200㎡）" });
-    // 広さの近い取引の相場：相場比は出さず、物件の坪単価を並べる。10件未満は「件数が少ない」
+    expect(find(facts, /^土地面積（/)).toMatchObject({ id: "M-04", 値: "物件200㎡", 比較: "西区・築20〜29年の中央値 200㎡" });
+    // 広さの近い取引の相場：相場比は出さず、物件の坪単価と並べる。10件未満は「件数が少ない」
     // 18,000,000/100、20,000,000/110、21,000,000/100 の坪単価の中央値 ＝ 20,000,000÷110×3.30578 ≒ 60.1万円
-    expect(find(facts, /^広さの近い取引の相場/)).toMatchObject({
+    expect(find(facts, /^延床の坪単価（広さの近い取引/)).toMatchObject({
       id: "M-05",
-      項目: "広さの近い取引の相場（西区・築20〜29年・延床74〜137㎡・土地140〜260㎡・延床の坪単価）",
-      値: "中央値60.1万円/坪（3件。件数が少ない。物件77.7万円/坪）",
+      項目: "延床の坪単価（広さの近い取引の相場と比べる：西区・築20〜29年・延床74〜137㎡・土地140〜260㎡）",
+      値: "物件77.7万円/坪",
+      比較: "広さの近い取引の中央値 60.1万円/坪（3件。件数が少ない）",
       時点: "2015〜2023",
       出典: "不動産情報ライブラリ XIT001",
     });
@@ -445,11 +444,13 @@ describe("事実シートの組み立て", () => {
 
   it("相場（M）：取引が無ければ5件とも「取得できず」で、IDの並びは変わらない", () => {
     const f = buildFacts(sample({ market: null, similarMarket: null }));
-    expect(find(f, /^区の相場（/)).toMatchObject({ id: "M-01", 項目: "区の相場（西区・築20〜29年・戸建・延床の坪単価）", 値: null, 状態: "取得できず" });
+    const unit = find(f, /^延床の坪単価（西区/);
+    expect(unit).toMatchObject({ id: "M-01", 項目: "延床の坪単価（西区・築20〜29年の戸建の相場と比べる）", 値: null, 状態: "取得できず" });
+    expect(unit).not.toHaveProperty("比較");
     expect(find(f, /^相場比/)).toMatchObject({ id: "M-02", 状態: "取得できず" });
-    expect(find(f, /^区の相場の取引の延床面積/)).toMatchObject({ id: "M-03", 状態: "取得できず" });
-    expect(find(f, /^区の相場の取引の土地面積/)).toMatchObject({ id: "M-04", 状態: "取得できず" });
-    expect(find(f, /^広さの近い取引の相場/)).toMatchObject({ id: "M-05", 状態: "取得できず" });
+    expect(find(f, /^延床面積（/)).toMatchObject({ id: "M-03", 状態: "取得できず" });
+    expect(find(f, /^土地面積（/)).toMatchObject({ id: "M-04", 状態: "取得できず" });
+    expect(find(f, /^延床の坪単価（広さの近い取引/)).toMatchObject({ id: "M-05", 状態: "取得できず" });
     expect(find(f, "近くの公示地（住宅地）").id).toBe("M-06");
   });
 
@@ -499,6 +500,10 @@ describe("事実シートの組み立て", () => {
     const kids = find(facts, "小児科のある病院・診療所（1km以内）");
     expect(kids.値).toBe("0件。3km以内になし");
     expect(kids).not.toHaveProperty("比較");
+    // 通うのは1か所の施設（学校など）は、区の平均があっても比べない
+    const school = find(facts, "小学校（1km以内）");
+    expect(school.値).toBe("1件：架空小学校 直線700m");
+    expect(school).not.toHaveProperty("比較");
   });
 
   it("交通（T）：入力の徒歩分と、直線距離の最寄り", () => {
