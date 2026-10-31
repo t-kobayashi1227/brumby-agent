@@ -196,7 +196,7 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
       // 住所を変えたら位置を取り直す（地図で直したピンも、住所が変わったら取り直す）
       const warning = before.address !== values.address ? await geocodeAndStore(sql, id, values.address) : null;
       revalidatePath(`/properties/${id}`);
-      revalidatePath("/strategy");
+      revalidatePath("/properties");
       if (warning) return { error: `保存しました。${warning}` };
       return { ok: before.address !== values.address ? "保存しました。住所が変わったので、位置を取り直しました。地図のピンを確かめてください。" : "保存しました。" };
     }
@@ -207,7 +207,7 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
       return Number(row.id);
     });
     await geocodeAndStore(sql, createdId, values.address);
-    revalidatePath("/strategy");
+    revalidatePath("/properties");
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
@@ -239,4 +239,20 @@ export async function regeocode(propertyId: number): Promise<PropertyFormState> 
   const warning = await geocodeAndStore(sql, propertyId, row.address);
   revalidatePath(`/properties/${propertyId}`);
   return warning ? { error: warning } : { ok: "住所から位置を取り直しました。地図のピンを確かめてください。" };
+}
+
+/** 登録の前に、住所が国土地理院の住所検索で見つかるかを確かめる（保存はしない） */
+export async function previewAddress(address: string): Promise<PropertyFormState> {
+  const q = String(address ?? "").trim();
+  if (q === "") return { error: "住所を入れてください" };
+  if (q.length > 200) return { error: "住所が長すぎます" };
+  let hit;
+  try {
+    hit = await geocodeAddress(q);
+  } catch {
+    return { error: "住所検索に接続できませんでした。登録したあと、地図でピンを置けます。" };
+  }
+  if (!hit) return { error: "この住所では位置を出せませんでした。番地まで入っているか確かめてください。登録したあと、地図でピンを置くこともできます。" };
+  // 町丁目までしか当たらないこともあるため、「番地まで合った」とは言わない
+  return { ok: `住所検索では「${hit.title || q}」として見つかりました。番地まで合っているとは限らないため、登録したあと地図でピンの位置を確かめてください。` };
 }

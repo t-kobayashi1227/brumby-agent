@@ -84,8 +84,8 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center gap-3 print:hidden">
-        <Link href="/strategy" className="text-xs text-brand underline">
-          ← 販売戦略の一覧に戻る
+        <Link href="/properties" className="text-xs text-brand underline">
+          ← 物件一覧に戻る
         </Link>
         <div className="mr-auto" />
         <Link href={`/properties/${propertyId}`} className="text-xs text-brand underline">
