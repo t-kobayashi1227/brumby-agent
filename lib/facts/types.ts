@@ -9,7 +9,7 @@ export type FactCategory = "P" | "M" | "R" | "A" | "S" | "L" | "T" | "H" | "B" |
 /** 分類の名前と主な中身（docs/設計まとめ.md「③事実シート」の英字の表）。画面の凡例に使う */
 export const FACT_CATEGORIES: Record<FactCategory, { name: string; contents: string }> = {
   P: { name: "物件", contents: "価格、間取り、面積、築年数、駐車、リフォーム、特徴" },
-  M: { name: "相場", contents: "区×築年数の坪単価の相場、相場比、広さの近い取引の相場、公示地" },
+  M: { name: "相場", contents: "区×築年数の坪単価の相場、相場比、広さの近い取引の相場、公示地、土地と建物の目安" },
   R: { name: "規制", contents: "用途地域" },
   A: { name: "エリア", contents: "年齢構成、世帯構成、持ち家率、将来人口" },
   S: { name: "学区", contents: "小学校区、中学校区" },
