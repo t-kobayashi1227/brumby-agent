@@ -76,10 +76,9 @@ export default function FactSheetTable({ facts }: { facts: Fact[] }) {
   return (
     <>
       <FactLegend facts={facts} onJump={jump} />
-      {/* 列の幅を決めて横スクロールにする（狭い画面で値や出典が細く折り返されないように）。ID の列は横に動かしても見えるよう固定する */}
+      {/* 列の幅を決めて横スクロールにする（狭い画面で値や出典が細く折り返されないように） */}
       <div className="overflow-x-auto -mx-5 px-5">
-        {/* border-collapse だと sticky が効かないブラウザがあるため border-separate にする（spacing 0 で見た目は collapse と同じ） */}
-        <table className="w-full table-fixed text-[14px] text-ink border-separate border-spacing-0" style={{ minWidth: MIN_WIDTH }}>
+        <table className="w-full table-fixed text-[14px] text-ink border-collapse" style={{ minWidth: MIN_WIDTH }}>
           <colgroup>
             {FACT_COLUMNS.map((c) => (
               <col key={c.label} style={{ width: c.width }} />
@@ -87,8 +86,8 @@ export default function FactSheetTable({ facts }: { facts: Fact[] }) {
           </colgroup>
           <thead>
             <tr className="text-left text-sub bg-subtle">
-              {FACT_COLUMNS.map((c, i) => (
-                <th key={c.label} className={`px-3 py-2.5 font-bold text-[13px] whitespace-nowrap border-b border-line ${i === 0 ? "sticky left-0 z-10 bg-subtle" : ""}`}>
+              {FACT_COLUMNS.map((c) => (
+                <th key={c.label} className="px-3 py-2.5 font-bold text-[13px] whitespace-nowrap border-b border-line">
                   {c.label}
                 </th>
               ))}
@@ -101,7 +100,7 @@ export default function FactSheetTable({ facts }: { facts: Fact[] }) {
                 id={factRowId(f.id)}
                 className={`group/row scroll-mt-4 align-top border-b border-line transition-colors duration-700 ${jumped === f.id ? "bg-primary-soft/40" : "hover:bg-primary-soft/40"}`}
               >
-                <td className={`sticky left-0 px-3 transition-colors duration-700 ${jumped === f.id ? "bg-[#f4f8fd]" : "bg-white group-hover/row:bg-[#f4f8fd]"} py-3 font-mono text-[13px] text-sub whitespace-nowrap`}>{f.id}</td>
+                <td className="px-3 py-3 font-mono text-[13px] text-sub whitespace-nowrap">{f.id}</td>
                 <td className="px-3 py-3 font-bold leading-relaxed">{f.項目}</td>
                 <td className={`px-3 py-3 leading-relaxed ${f.値 === null ? "text-sub" : ""}`}>{f.値 ?? "不明"}</td>
                 <td className="px-3 py-3 leading-relaxed text-body">{f.比較 ?? ""}</td>
