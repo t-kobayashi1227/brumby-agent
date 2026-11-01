@@ -693,22 +693,60 @@ export function depthLower(label: string): number {
   return m ? Number(m[1]) : -1;
 }
 
+/**
+ * 洪水の想定浸水深の表示文を作る。河川ごとにいちばん深い区分を取り、深さが河川で異なるときは
+ * 「最大◯◯（深い河川）。△△は浅い区分」の形で対応関係を残す（docs/BRUMBY_根拠データ修正仕様.md F05）
+ */
+export function floodDepthText(flood: ZoneHit[]): string {
+  const rank = (z: ZoneHit) => Number(z.attrs?.["浸水深ランク"] ?? depthLower(z.label));
+  const riverOf = (z: ZoneHit): string | null => {
+    const r = z.attrs?.["河川名"];
+    return typeof r === "string" && r !== "" ? r : null;
+  };
+
+  // 河川ごとにいちばん深い区分を取る（河川名が無い区域はまとめて1件として扱う）
+  const deepestByRiver = new Map<string | null, ZoneHit>();
+  for (const z of flood) {
+    const river = riverOf(z);
+    const cur = deepestByRiver.get(river);
+    if (!cur || rank(z) > rank(cur)) deepestByRiver.set(river, z);
+  }
+  const entries = [...deepestByRiver.entries()].map(([river, z]) => ({ river, label: z.label, rank: rank(z) }));
+
+  // 深さが1種類だけなら、対応関係を失わないので今までどおりの書き方にする
+  if (new Set(entries.map((e) => e.label)).size === 1) {
+    const rivers = entries.map((e) => e.river).filter((r): r is string => r !== null);
+    return `${entries[0].label}${rivers.length ? `（${rivers.join("・")}の想定）` : ""}`;
+  }
+
+  const maxRank = Math.max(...entries.map((e) => e.rank));
+  const deepest = entries.filter((e) => e.rank === maxRank);
+  const shallowerByLabel = new Map<string, string[]>();
+  for (const e of entries) {
+    if (e.rank === maxRank) continue;
+    const rivers = shallowerByLabel.get(e.label) ?? [];
+    rivers.push(e.river ?? "河川名なし");
+    shallowerByLabel.set(e.label, rivers);
+  }
+  const shallowerSorted = [...shallowerByLabel.entries()].sort((a, b) => depthLower(b[0]) - depthLower(a[0]));
+
+  const deepestRivers = deepest.map((e) => e.river).filter((r): r is string => r !== null);
+  const parts = [`最大${deepest[0].label}${deepestRivers.length ? `（${deepestRivers.join("・")}）` : ""}`];
+  for (const [label, rivers] of shallowerSorted) parts.push(`${rivers.join("・")}は${label}`);
+  return parts.join("。");
+}
+
 function hazardFacts(c: Collected): FactDraft[] {
   const hits = (kind: string) => c.zones.filter((z) => z.kind === kind);
   const out: FactDraft[] = [];
 
-  // 洪水：川ごとの想定のうち、いちばん深い区分。川の名前を添える
+  // 洪水：川ごとの想定のうち、いちばん深い区分。深さが川で異なるときは、対応関係を残してまとめる
   const floodSrc = sourcesOf(c, ["D31"]);
   if (!loaded(c, "D31")) out.push(fact("H", "洪水の想定浸水深（想定最大規模）", null, floodSrc));
   else {
     const flood = hits("洪水浸水想定");
     if (flood.length === 0) out.push(fact("H", "洪水の想定浸水深（想定最大規模）", "浸水想定区域の外", floodSrc));
-    else {
-      const rank = (z: ZoneHit) => Number(z.attrs?.["浸水深ランク"] ?? depthLower(z.label));
-      const deepest = flood.reduce((a, b) => (rank(b) > rank(a) ? b : a));
-      const rivers = [...new Set(flood.map((z) => z.attrs?.["河川名"]).filter((r): r is string => typeof r === "string" && r !== ""))];
-      out.push(fact("H", "洪水の想定浸水深（想定最大規模）", `${deepest.label}${rivers.length ? `（${rivers.join("・")}の想定）` : ""}`, floodSrc));
-    }
+    else out.push(fact("H", "洪水の想定浸水深（想定最大規模）", floodDepthText(flood), floodSrc));
   }
 
   const landslideSrc = sourcesOf(c, ["D33"]);

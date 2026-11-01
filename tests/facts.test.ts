@@ -581,7 +581,21 @@ describe("事実シートの組み立て", () => {
     expect(find(facts, "液状化の発生傾向").値).toBe("やや液状化しやすい（後背湿地）");
   });
 
-  it("災害（H）：洪水はいちばん深い区分と川の名前", () => {
+  it("災害（H）：洪水は河川ごとにいちばん深い区分を取り、深さが同じなら今までの書き方", () => {
+    const f = buildFacts(
+      sample({
+        datasets: { ...DATASETS, D31: { ...DATASETS.D31, row_count: 10 } },
+        zones: [
+          { dataset_id: "D31", kind: "洪水浸水想定", label: "0.5〜3.0m未満", attrs: { 浸水深ランク: 2, 河川名: "信濃川" } },
+          { dataset_id: "D31", kind: "洪水浸水想定", label: "0.5〜3.0m未満", attrs: { 浸水深ランク: 2, 河川名: "阿賀野川" } },
+        ],
+      }),
+    );
+    expect(find(f, "洪水の想定浸水深（想定最大規模）")).toMatchObject({ 値: "0.5〜3.0m未満（信濃川・阿賀野川の想定）", 状態: "取得" });
+    expect(find(buildFacts(sample({ datasets: { ...DATASETS, D31: { ...DATASETS.D31, row_count: 10 } } })), "洪水の想定浸水深（想定最大規模）").値).toBe("浸水想定区域の外");
+  });
+
+  it("災害（H）：洪水は河川で深さが異なるとき、対応関係を失わない（F05）", () => {
     const f = buildFacts(
       sample({
         datasets: { ...DATASETS, D31: { ...DATASETS.D31, row_count: 10 } },
@@ -591,8 +605,23 @@ describe("事実シートの組み立て", () => {
         ],
       }),
     );
-    expect(find(f, "洪水の想定浸水深（想定最大規模）")).toMatchObject({ 値: "3.0〜5.0m未満（信濃川・阿賀野川の想定）", 状態: "取得" });
-    expect(find(buildFacts(sample({ datasets: { ...DATASETS, D31: { ...DATASETS.D31, row_count: 10 } } })), "洪水の想定浸水深（想定最大規模）").値).toBe("浸水想定区域の外");
+    expect(find(f, "洪水の想定浸水深（想定最大規模）").値).toBe("最大3.0〜5.0m未満（阿賀野川）。信濃川は0.5〜3.0m未満");
+  });
+
+  it("災害（H）：洪水は同じ河川の複数区域に当たるとき、河川ごとに最大値を取る（F05・物件1の確認結果）", () => {
+    const f = buildFacts(
+      sample({
+        datasets: { ...DATASETS, D31: { ...DATASETS.D31, row_count: 10 } },
+        zones: [
+          { dataset_id: "D31", kind: "洪水浸水想定", label: "0〜0.5m未満", attrs: { 浸水深ランク: 1, 河川名: "信濃川" } },
+          { dataset_id: "D31", kind: "洪水浸水想定", label: "0.5〜3.0m未満", attrs: { 浸水深ランク: 2, 河川名: "信濃川" } },
+          { dataset_id: "D31", kind: "洪水浸水想定", label: "0.5〜3.0m未満", attrs: { 浸水深ランク: 2, 河川名: "阿賀野川" } },
+          { dataset_id: "D31", kind: "洪水浸水想定", label: "0.5〜3.0m未満", attrs: { 浸水深ランク: 2, 河川名: "小阿賀野川" } },
+          { dataset_id: "D31", kind: "洪水浸水想定", label: "0〜0.5m未満", attrs: { 浸水深ランク: 1, 河川名: "鳥屋野潟" } },
+        ],
+      }),
+    );
+    expect(find(f, "洪水の想定浸水深（想定最大規模）").値).toBe("最大0.5〜3.0m未満（信濃川・阿賀野川・小阿賀野川）。鳥屋野潟は0〜0.5m未満");
   });
 
   it("買い手（B）：見本のローン計算と、必要年収以上の割合", () => {
