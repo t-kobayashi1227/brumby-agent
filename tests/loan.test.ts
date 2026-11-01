@@ -5,12 +5,12 @@ import { calcLoan, loanTerm, monthlyPayment, parseIncomeBin, shareAboveIncome, t
 const A: LoanAssumptions = { downPaymentPct: 10, repaymentRatioPct: 25, termYears: 35, maxAgeAtPayoff: 80 };
 
 describe("ローン計算（設計まとめの見本：2,480万円）", () => {
-  it("変動1.3%：月約6.6万円、必要年収約318万円", () => {
-    const r = calcLoan(2480, 1.3, A);
+  it("変動0.95%：月約6.2万円、必要年収約300万円", () => {
+    const r = calcLoan(2480, 0.95, A);
     expect(r.principalYen).toBe(22_320_000);
     expect(r.termYears).toBe(35);
-    expect(Math.round(r.monthlyYen / 1000) / 10).toBe(6.6);
-    expect(Math.round(r.requiredIncomeYen / 10_000)).toBe(318);
+    expect(Math.round(r.monthlyYen / 1000) / 10).toBe(6.2);
+    expect(Math.round(r.requiredIncomeYen / 10_000)).toBe(300);
   });
 
   it("固定3.83%：月約9.7万円、必要年収約463.5万円", () => {
@@ -36,9 +36,9 @@ describe("返済期間", () => {
   });
 
   it("短くした期間で月々の返済額を出す", () => {
-    const r = calcLoan(2480, 1.3, A, 65);
+    const r = calcLoan(2480, 0.95, A, 65);
     expect(r.termYears).toBe(15);
-    expect(r.monthlyYen).toBeCloseTo(monthlyPayment(22_320_000, 1.3, 15), 6);
+    expect(r.monthlyYen).toBeCloseTo(monthlyPayment(22_320_000, 0.95, 15), 6);
   });
 });
 

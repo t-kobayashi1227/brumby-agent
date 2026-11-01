@@ -219,17 +219,31 @@ async function collectMarket(sql: Sql, town: TownInfo | null, property: Property
   return { market: selectMarket(trades, band, latest.year), similar: selectSimilarMarket(trades, band, latest.year, property) };
 }
 
-/** 近くの公示地・基準地（D02・D03）。住宅地の地点のうち、3km以内でいちばん近いもの（新しい年） */
+/**
+ * 近くの公示地・基準地（D02・D03）。住宅地の地点のうち、3km以内でいちばん近いもの（新しい年）
+ * 地積（㎡）は、公示地（D02）は raw の L01_027、基準地（D03）は L02_024 にある（国土数値情報の属性を実データで確認して特定。土地の目安 M-07 に使う）
+ */
 async function collectLandPrice(sql: Sql, pt: Point) {
-  const [row] = await sql<{ dataset_id: string; address: string | null; price_per_sqm: number | null; change_rate: string | null; year: number; distance_m: number }[]>`
-    select dataset_id, address, price_per_sqm, change_rate, year, extensions.st_distance(geog, ${pt}) as distance_m
+  const [row] = await sql<
+    { dataset_id: string; address: string | null; price_per_sqm: number | null; change_rate: string | null; year: number; chiseki_sqm: string | null; distance_m: number }[]
+  >`
+    select dataset_id, address, price_per_sqm, change_rate, year,
+      case when dataset_id = 'D02' then raw->>'L01_027' else raw->>'L02_024' end as chiseki_sqm,
+      extensions.st_distance(geog, ${pt}) as distance_m
     from land_prices
     where use_category = '住宅地' and extensions.st_dwithin(geog, ${pt}, ${CAR_M})
       and year = (select max(year) from land_prices)
     order by geog operator(extensions.<->) ${pt}
     limit 1
   `;
-  return row ? { ...row, change_rate: row.change_rate === null ? null : Number(row.change_rate), distance_m: Number(row.distance_m) } : null;
+  return row
+    ? {
+        ...row,
+        change_rate: row.change_rate === null ? null : Number(row.change_rate),
+        chiseki_sqm: row.chiseki_sqm === null ? null : Number(row.chiseki_sqm),
+        distance_m: Number(row.distance_m),
+      }
+    : null;
 }
 
 /**

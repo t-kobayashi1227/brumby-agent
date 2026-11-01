@@ -105,7 +105,7 @@ function sample(overrides: Partial<Collected> = {}): Collected {
         { year: 2023, building_year: 2000, price: 21_000_000, floor_sqm: 100, land_sqm: 220 },
       ],
     },
-    landPrice: { dataset_id: "D02", address: "新潟県　新潟市西区架空町２丁目１番", price_per_sqm: 35800, change_rate: 0.6, year: 2026, distance_m: 652 },
+    landPrice: { dataset_id: "D02", address: "新潟県　新潟市西区架空町２丁目１番", price_per_sqm: 35800, change_rate: 0.6, year: 2026, chiseki_sqm: 165, distance_m: 652 },
     zones: [
       { dataset_id: "D04", kind: "用途地域", label: "第１種低層住居専用地域", attrs: null },
       { dataset_id: "D34", kind: "津波浸水想定", label: "0.01m以上〜0.3m未満", attrs: null },
@@ -161,7 +161,7 @@ function sample(overrides: Partial<Collected> = {}): Collected {
       media: [{ category: "SNS・動画の利用率", item: "Instagram", byAge: [{ age: "20代", value: 83 }, { age: "30代", value: 77 }], source: "総務省 問6" }],
     },
     assumptions: [
-      { id: 1, key: "変動金利", value: 1.3, unit: "%", as_of: "2026-10" },
+      { id: 1, key: "変動金利", value: 0.95, unit: "%", as_of: "2026-10" },
       { id: 2, key: "全期間固定金利", value: 3.83, unit: "%", as_of: "2026-10" },
       { id: 3, key: "頭金の割合", value: 10, unit: "%", as_of: "2025年度" },
       { id: 4, key: "返済負担率", value: 25, unit: "%", as_of: "2025年度" },
@@ -169,6 +169,9 @@ function sample(overrides: Partial<Collected> = {}): Collected {
       { id: 6, key: "完済年齢の上限", value: 80, unit: "歳", as_of: "令和7年度" },
       { id: 7, key: "住み替えの頭金の割合（中古）", value: 49.2, unit: "%", as_of: "令和7年度", basis: "住宅市場動向調査 二次取得者の自己資金比率" },
       { id: 8, key: "住み替えの頭金の金額（中古）", value: 1223, unit: "万円", as_of: "令和7年度", basis: "住宅市場動向調査 二次取得者の平均の自己資金（三大都市圏）" },
+      { id: 9, key: "建物の単価（木造）", value: 247000, unit: "円/㎡", as_of: "令和8年分", basis: "地域別・構造別の工事費用表（国税庁）新潟県・木造" },
+      { id: 10, key: "建物の耐用年数（木造）", value: 35, unit: "年", as_of: "2026-11" },
+      { id: 11, key: "建物の残りの割合の下限", value: 20, unit: "%", as_of: "2026-11" },
     ],
     targets: [
       { name: "若い夫婦", representative_age: 30, definition: "世帯主が20〜30代前半の夫婦" },
@@ -442,6 +445,58 @@ describe("事実シートの組み立て", () => {
     });
   });
 
+  // docs/履歴/土地と建物の目安_修正案.md。目安（鑑定・査定ではない）で、AIは計算しない
+  it("土地と建物の目安（M-07〜M-10）：公示地の価格×土地面積、建て直す費用×残りの割合", () => {
+    expect(find(facts, "土地の目安（近くの公示地の価格×土地面積）")).toMatchObject({
+      id: "M-07",
+      値: "716万円（35,800円/㎡×200㎡）",
+      比較: "公示地の地積 165㎡、物件から直線650m",
+      出典: "国土数値情報 L01・入力",
+      時点: "2026",
+    });
+    expect(find(facts, "建物の目安（建て直す費用×残りの割合）")).toMatchObject({
+      id: "M-08",
+      // 残り = max(20%, 1 − 22÷35) = 1 − 22÷35 ≒ 37.1%（下限20%には達しない）
+      値: "968万円（247,000円/㎡×105.5㎡×残り37.1%）",
+      出典: "地域別・構造別の工事費用表（国税庁）新潟県・木造・入力（木造とみなした。リフォームは反映していない）",
+      時点: "令和8年分",
+    });
+    expect(find(facts, "土地と建物の目安の合計")).toMatchObject({ id: "M-09", 値: "1,684万円", 比較: "価格 2,480万円" });
+    expect(find(facts, "価格から土地の目安を引いた残り")).toMatchObject({ id: "M-10", 値: "1,764万円", 比較: "建物の目安 968万円" });
+  });
+
+  it("土地と建物の目安：公示地が無ければ土地と合計は「取得できず」。建物は出し、残りは出せない", () => {
+    const f = buildFacts(sample({ landPrice: null }));
+    expect(find(f, "土地の目安（近くの公示地の価格×土地面積）")).toMatchObject({ id: "M-07", 値: null, 状態: "取得できず" });
+    expect(find(f, "建物の目安（建て直す費用×残りの割合）")).toMatchObject({ id: "M-08", 状態: "取得" });
+    expect(find(f, "土地と建物の目安の合計")).toMatchObject({ id: "M-09", 値: null, 状態: "取得できず" });
+    expect(find(f, "価格から土地の目安を引いた残り")).toMatchObject({ id: "M-10", 値: null, 状態: "取得できず" });
+  });
+
+  it("土地と建物の目安：新築（築0年）は建物の残り100%。耐用年数を過ぎた築古は下限20%で止める", () => {
+    const newBuilt = find(buildFacts(sample({ property: { ...sample().property, building_age: 0 } })), "建物の目安（建て直す費用×残りの割合）");
+    expect(newBuilt.値).toBe("2,606万円（247,000円/㎡×105.5㎡×残り100.0%）");
+
+    const old = find(buildFacts(sample({ property: { ...sample().property, building_age: 50 } })), "建物の目安（建て直す費用×残りの割合）");
+    // 1 − 50÷35 はマイナスなので下限20%で止める
+    expect(old.値).toBe("521万円（247,000円/㎡×105.5㎡×残り20.0%）");
+  });
+
+  it("土地と建物の目安：土地の目安が価格より大きいと、残りはマイナスのまま出す（埋めない）", () => {
+    const f = buildFacts(sample({ property: { ...sample().property, price_man_yen: 500 } }));
+    // 土地の目安716万円 > 価格500万円
+    expect(find(f, "価格から土地の目安を引いた残り")).toMatchObject({ 値: "-216万円（土地の目安が価格より大きい）" });
+  });
+
+  it("土地と建物の目安：物件の土地面積が公示地の1.5倍を超える・0.5倍未満だと注記を添える", () => {
+    const wide = find(buildFacts(sample({ property: { ...sample().property, land_sqm: 300 } })), "土地の目安（近くの公示地の価格×土地面積）");
+    expect(wide.値).toContain("（公示地と広さが大きく違うため、ずれが大きい可能性）");
+    const narrow = find(buildFacts(sample({ property: { ...sample().property, land_sqm: 50 } })), "土地の目安（近くの公示地の価格×土地面積）");
+    expect(narrow.値).toContain("（公示地と広さが大きく違うため、ずれが大きい可能性）");
+    const ok = find(buildFacts(sample()), "土地の目安（近くの公示地の価格×土地面積）");
+    expect(ok.値).not.toContain("ずれが大きい可能性");
+  });
+
   it("相場（M）：取引が無ければ5件とも「取得できず」で、IDの並びは変わらない", () => {
     const f = buildFacts(sample({ market: null, similarMarket: null }));
     const unit = find(f, /^延床の坪単価（西区/);
@@ -541,14 +596,14 @@ describe("事実シートの組み立て", () => {
   });
 
   it("買い手（B）：見本のローン計算と、必要年収以上の割合", () => {
-    expect(find(facts, "月々の返済額（変動1.3%・35年）")).toMatchObject({ id: "B-01", 値: "約6.6万円" });
-    expect(find(facts, "必要年収（変動1.3%）")).toMatchObject({ id: "B-02", 値: "約318万円" });
+    expect(find(facts, "月々の返済額（変動0.95%・35年）")).toMatchObject({ id: "B-01", 値: "約6.2万円" });
+    expect(find(facts, "必要年収（変動0.95%）")).toMatchObject({ id: "B-02", 値: "約300万円" });
     expect(find(facts, "月々の返済額（固定3.83%・35年）")).toMatchObject({ id: "B-03", 値: "約9.7万円" });
     expect(find(facts, "必要年収（固定3.83%）")).toMatchObject({ id: "B-04", 値: "約464万円" });
-    // 318万円：400万円未満の区分の (400-318)/400 ＝ 20.5% × 20 ＝ 4.1 ＋ 80 ＝ 84.1 → 約84%
+    // 300万円：400万円未満の区分の (400-300)/400 ＝ 25.0% × 20 ＝ 5.0 ＋ 80 ＝ 85.0 → 約85%
     // 年収分布は全国の値なので、項目名と出典に「全国」と書く
-    const share = find(facts, "必要年収以上の世帯の割合（変動1.3%、全国の中古戸建を買った世帯の年収分布から）");
-    expect(share.値).toBe("約84%");
+    const share = find(facts, "必要年収以上の世帯の割合（変動0.95%、全国の中古戸建を買った世帯の年収分布から）");
+    expect(share.値).toBe("約85%");
     expect(share.出典).toBe("住宅市場動向調査 p.450（全国、中古戸建を買った世帯の年収分布）から計算");
     // 返済期間が同じ候補（35年）は1行にまとめる。並びは返済期間の長い順
     const terms = facts.filter((f) => f.項目.includes("の返済の目安")).map((f) => f.項目);
@@ -557,15 +612,15 @@ describe("事実シートの組み立て", () => {
       "【60歳以上】の返済の目安（返済期間15年）",
       "【60歳以上】の返済の目安（住み替えで頭金49.2%の場合（平均の自己資金比率）、返済期間15年）",
     ]);
-    expect(find(facts, "【若い夫婦・単身】の返済の目安（返済期間35年）").値).toMatch(/^代表年齢30・35歳。変動1.3%：月々約6.6万円・必要年収約318万円/);
-    // 頭金49.2%：借入 2,480万円×0.508＝1,259.84万円を15年・1.3% → 月々約7.7万円、必要年収 約370万円
+    expect(find(facts, "【若い夫婦・単身】の返済の目安（返済期間35年）").値).toMatch(/^代表年齢30・35歳。変動0.95%：月々約6.2万円・必要年収約300万円/);
+    // 頭金49.2%：借入 2,480万円×0.508＝1,259.84万円を15年・0.95% → 月々約7.5万円、必要年収 約361万円
     const resale = find(facts, "【60歳以上】の返済の目安（住み替えで頭金49.2%の場合（平均の自己資金比率）、返済期間15年）");
-    expect(resale.値).toMatch(/^代表年齢65歳。変動1.3%：月々約7.7万円・必要年収約370万円/);
+    expect(resale.値).toMatch(/^代表年齢65歳。変動0.95%：月々約7.5万円・必要年収約361万円/);
     expect(resale).toMatchObject({ 時点: "令和7年度" });
     // 比率の前提値の根拠に「三大都市圏」が無くても、出典には書く
     expect(resale.出典).toMatch(/^ローン計算（頭金49.2%：住宅市場動向調査 二次取得者の自己資金比率（三大都市圏）・完済80歳まで）/);
     // 返済負担率は無理のない目安で、審査の上限ではないと出典に書く
-    expect(find(facts, "必要年収（変動1.3%）").出典).toBe("ローン計算（頭金10%・返済負担率25%（無理のない目安。審査の上限ではない）・元利均等）");
+    expect(find(facts, "必要年収（変動0.95%）").出典).toBe("ローン計算（頭金10%・返済負担率25%（無理のない目安。審査の上限ではない）・元利均等）");
     // 前提値が無ければ住み替えの行は出さない
     const noResale = buildFacts(sample({ assumptions: sample().assumptions.filter((a) => !a.key.startsWith("住み替え")) }));
     expect(noResale.some((f) => f.項目.includes("住み替えで頭金"))).toBe(false);
@@ -592,8 +647,8 @@ describe("事実シートの組み立て", () => {
 
     const f = buildFacts(sample({ property: { ...sample().property, price_man_yen: 5980 } }));
     const resale = find(f, "【60歳以上】の返済の目安（住み替えで頭金1,223万円の場合（平均の自己資金）、返済期間15年）");
-    // 借入 5,980−1,223＝4,757万円を15年・1.3%
-    expect(resale.値).toMatch(/^代表年齢65歳。変動1.3%：月々約29.1万円/);
+    // 借入 5,980−1,223＝4,757万円を15年・0.95%
+    expect(resale.値).toMatch(/^代表年齢65歳。変動0.95%：月々約28.4万円/);
     expect(resale.出典).toMatch(/^ローン計算（頭金1,223万円：住宅市場動向調査 二次取得者の平均の自己資金（三大都市圏）・完済80歳まで）/);
   });
 

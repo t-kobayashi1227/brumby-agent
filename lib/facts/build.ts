@@ -92,6 +92,8 @@ interface LandPriceInput {
   price_per_sqm: number | null;
   change_rate: number | null;
   year: number;
+  /** 公示地・基準地の地積（㎡）。土地の目安（M-07）で、物件の土地面積との広さの違いを見るために使う */
+  chiseki_sqm: number | null;
   distance_m: number;
 }
 
@@ -403,7 +405,76 @@ function marketFacts(c: Collected): FactDraft[] {
     row(labels.land, vs(`物件${sqm(p.land_sqm)}`, landMedian, sqm)),
     similarFact(c, ward, band, own),
     landFact(c),
+    ...landBuildingValueFacts(c),
   ];
+}
+
+/** 公示地・基準地と物件の土地面積が大きく違うときの線（docs/履歴/土地と建物の目安_修正案.md 2、仮の線として決定） */
+const SIZE_RATIO_HIGH = 1.5;
+const SIZE_RATIO_LOW = 0.5;
+
+/**
+ * 土地と建物の目安（docs/履歴/土地と建物の目安_修正案.md）。不動産鑑定評価基準の原価法の考え方を簡単な形で足したもので、
+ * 鑑定・査定ではない「目安」。計算はここだけで行い、AI には計算させない
+ */
+function landBuildingValueFacts(c: Collected): FactDraft[] {
+  const p = c.property;
+  const l = c.landPrice;
+  const landSrc = sourcesOf(c, l ? [l.dataset_id] : ["D02", "D03"]);
+
+  let landValueManYen: number | null = null;
+  let landValueFact: FactDraft;
+  if (!l || l.price_per_sqm === null) {
+    landValueFact = fact("M", "土地の目安（近くの公示地の価格×土地面積）", null, landSrc);
+  } else {
+    const yen = l.price_per_sqm * p.land_sqm;
+    landValueManYen = Math.round(yen / 10_000);
+    const sizeNote =
+      l.chiseki_sqm !== null && (p.land_sqm > l.chiseki_sqm * SIZE_RATIO_HIGH || p.land_sqm < l.chiseki_sqm * SIZE_RATIO_LOW)
+        ? "（公示地と広さが大きく違うため、ずれが大きい可能性）"
+        : "";
+    const 比較 = l.chiseki_sqm !== null ? `公示地の地積 ${sqm(l.chiseki_sqm)}、物件から${formatDistance(l.distance_m)}` : `物件から${formatDistance(l.distance_m)}`;
+    landValueFact = fact(
+      "M",
+      "土地の目安（近くの公示地の価格×土地面積）",
+      `${formatManYen(yen)}（${formatNumber(l.price_per_sqm)}円/㎡×${sqm(p.land_sqm)}）${sizeNote}`,
+      { 出典: `${landSrc.出典}・入力`, 時点: String(l.year) },
+      { 比較 },
+    );
+  }
+
+  const unitPrice = assumption(c, "建物の単価（木造）");
+  const usefulLife = assumption(c, "建物の耐用年数（木造）");
+  const floorRatio = assumption(c, "建物の残りの割合の下限");
+  const remainingRatio = Math.max(floorRatio.value / 100, 1 - p.building_age / usefulLife.value);
+  const buildingYen = unitPrice.value * p.building_sqm * remainingRatio;
+  const buildingValueManYen = Math.round(buildingYen / 10_000);
+  const buildingValueFact = fact(
+    "M",
+    "建物の目安（建て直す費用×残りの割合）",
+    `${formatManYen(buildingYen)}（${formatNumber(unitPrice.value)}円/㎡×${sqm(p.building_sqm)}×残り${formatPct(remainingRatio * 100)}）`,
+    { 出典: `${unitPrice.basis ?? "前提値"}・入力（木造とみなした。リフォームは反映していない）`, 時点: unitPrice.as_of },
+  );
+
+  const totalSrc = { 出典: "M-07・M-08 から計算", 時点: l ? `${l.year}・${unitPrice.as_of}` : unitPrice.as_of };
+  const totalFact =
+    landValueManYen === null
+      ? fact("M", "土地と建物の目安の合計", null, totalSrc)
+      : fact("M", "土地と建物の目安の合計", `${formatNumber(landValueManYen + buildingValueManYen)}万円`, totalSrc, {
+          比較: `価格 ${formatNumber(p.price_man_yen)}万円`,
+        });
+  const remainderFact =
+    landValueManYen === null
+      ? fact("M", "価格から土地の目安を引いた残り", null, totalSrc)
+      : fact(
+          "M",
+          "価格から土地の目安を引いた残り",
+          `${formatNumber(p.price_man_yen - landValueManYen)}万円${p.price_man_yen - landValueManYen < 0 ? "（土地の目安が価格より大きい）" : ""}`,
+          totalSrc,
+          { 比較: `建物の目安 ${formatManYen(buildingYen)}` },
+        );
+
+  return [landValueFact, buildingValueFact, totalFact, remainderFact];
 }
 
 /** 広さの近い取引の相場（docs/履歴/相場の出し方変更.md 3.8）。相場比は出さず、物件の坪単価を「値」、相場を「比較」に入れる */
