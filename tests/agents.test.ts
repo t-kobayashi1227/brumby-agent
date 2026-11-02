@@ -146,12 +146,13 @@ describe("戦略担当の分析", () => {
     ]);
   });
 
-  it("「外す」の分析を取り除き、媒体には分析を除いた部分だけを渡す", () => {
+  it("「外す」の分析を取り除き、媒体には unknown を除いた部分（分析を含む）を渡す", () => {
     const r = removeSentences(strategy(), media(), checkProgram(strategy(), media(), FACTS, MEDIA_IDS));
     expect(r.main.analysis).toHaveLength(1);
     expect(r.main.appeals).toHaveLength(1);
     const forMedia = mainPart(r.main);
-    expect("analysis" in forMedia || "unknown" in forMedia).toBe(false);
+    expect("unknown" in forMedia).toBe(false);
+    expect(forMedia.analysis).toEqual(r.main.analysis);
     expect(forMedia.targets[0].name).toBe("若い夫婦");
   });
 });
