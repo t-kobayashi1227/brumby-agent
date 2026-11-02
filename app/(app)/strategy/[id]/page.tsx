@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { StrategyResult } from "../../../../lib/agents/run";
 import { getSql, inOrder } from "../../../../lib/db";
 import type { DatasetInfo } from "../../../../lib/facts/build";
-import { formatNumber } from "../../../../lib/facts/format";
+import { formatJstDateTime, formatNumber } from "../../../../lib/facts/format";
 import type { FactSheet } from "../../../../lib/facts/types";
 import { parsePropertyId } from "../../../../lib/property";
 import { sourceList, usedFactIds } from "../../../../lib/report";
@@ -63,12 +63,7 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
     const facts = done.content.事実;
     const { rows, credits } = sourceList(facts, usedFactIds(done.result.戦略, done.result.媒体), [...datasets]);
     report = (
-      <>
-        <div className="text-[12px] text-muted mb-2">
-          作成日時 {done.finished_at.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}・事実シート {done.content.作成日時} 時点
-        </div>
-        <Report result={done.result} facts={facts} sources={rows} credits={credits} mediaNames={Object.fromEntries(media.map((m) => [m.id, m.name]))} />
-      </>
+      <Report result={done.result} facts={facts} sources={rows} credits={credits} mediaNames={Object.fromEntries(media.map((m) => [m.id, m.name]))} />
     );
   }
 
@@ -100,7 +95,7 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
         </Link>
       </div>
 
-      <StrategyRunner propertyId={propertyId} initial={initial} hasReport={!!done} hasLocation={p.has_location}>
+      <StrategyRunner propertyId={propertyId} initial={initial} hasReport={!!done} lastCreatedAt={done ? formatJstDateTime(done.finished_at) : null} hasLocation={p.has_location}>
         <div className="text-[12px] text-muted">
           物件ID {p.code}・{p.property_class}・{p.building_age === 0 ? "新築" : `築${p.building_age}年`}
         </div>

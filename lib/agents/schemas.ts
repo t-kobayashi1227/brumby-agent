@@ -64,7 +64,7 @@ export function mainPart(strategy: StrategyOutput): MainOutput {
 
 export const mediaSchema = z.object({
   media: z.array(
-    z.object({ id: z.string(), name: z.string(), purpose: z.string(), target: z.string(), share: z.number().int(), reason: z.string(), evidence }),
+    z.object({ id: z.string(), name: z.string(), purpose: z.string(), target: z.string(), share: z.number().int(), share_reason: z.string(), reason: z.string(), evidence }),
   ),
   cautions: z.array(z.object({ text: z.string(), action: z.string(), evidence })),
 });

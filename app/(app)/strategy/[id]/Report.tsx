@@ -9,7 +9,7 @@ import UnderlineTabs from "../../../_components/UnderlineTabs";
 import { card } from "../../../_lib/ui";
 import MediaDonut, { MEDIA_COLORS } from "./MediaDonut";
 
-// ⑤販売戦略レポート（docs/設計まとめ.md「⑤画面の表示」）。「エリア分析・販売戦略・根拠データ」の3タブ
+// ⑤販売戦略レポート（docs/設計まとめ.md「⑤画面の表示」）。「販売戦略・根拠データ・エリア分析」の3タブ（2026-11-02 並びを変更）
 // 画面では AI を動かさず、保存した結果（strategy_runs.result）と事実シートを出すだけ。金額は lib/calc/budget.ts で計算済み
 // 販売戦略タブの並び（2026-10-31 提案資料の画面イメージに合わせて変更）：
 //   総合評価 → 3列（誰に・何を・どこで/いくらで）→ 販売の方向性 → 予算シミュレーション（初めは閉じる）
@@ -18,9 +18,9 @@ import MediaDonut, { MEDIA_COLORS } from "./MediaDonut";
 //   出典の一覧は根拠データタブへ移し、ライセンス表示が要るクレジットは全タブ共通の下部に残す
 
 const TABS = [
-  { key: "area", label: "エリア分析" },
   { key: "strategy", label: "販売戦略" },
   { key: "evidence", label: "根拠データ" },
+  { key: "area", label: "エリア分析" },
 ];
 
 /** 分析の見出しの順。組み合わせた見立てを先に出す */
@@ -171,17 +171,14 @@ function StrategyTab({ r, facts, mediaNames }: { r: StrategyResult; facts: Map<s
                       <span className="text-ink mr-auto">{nameOf(x.id, x.name)}</span>
                       <span className="font-bold text-ink whitespace-nowrap">{amount !== null ? manYen(amount) : `${x.share}%`}</span>
                     </div>
-                    <div className="pl-4 text-[12px] text-sub">
-                      {amount !== null && `${x.share}%・`}
-                      {x.purpose}
-                    </div>
+                    {/* 目的（問い合わせ・認知など）は出さない（2026-11-02 決定）。金額を出すときだけ配分の%を添える */}
+                    {amount !== null && <div className="pl-4 text-[12px] text-sub">{x.share}%</div>}
+                    {/* 割合の理由（2026-11-02 追加）。追加前に保存した結果には無いので、そのときは出さない */}
+                    {x.share_reason && <div className="pl-4 mt-0.5 text-[12px] text-body leading-relaxed">{x.share_reason}</div>}
                   </li>
                 );
               })}
             </ul>
-          </div>
-          <div className="mt-3">
-            <span className="inline-block rounded bg-primary-soft px-2 py-0.5 text-[12px] text-primary">配分はルールに基づき自動計算</span>
           </div>
         </Card>
       </div>
@@ -438,7 +435,7 @@ function EvidenceTab({ facts, sources }: { facts: Fact[]; sources: SourceRow[] }
           </table>
         </div>
       </Card>
-      <Card title="このレポートで使った出典">
+      <Card title="出典一覧">
         <table className="w-full text-[14px] text-body border-collapse">
           <thead>
             <tr className="text-left text-sub border-b border-line">
