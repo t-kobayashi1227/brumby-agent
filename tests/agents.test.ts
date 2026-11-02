@@ -61,9 +61,9 @@ function main(overrides: Partial<StrategyOutput> = {}): StrategyOutput {
 function media(overrides: Partial<MediaOutput> = {}): MediaOutput {
   return {
     media: [
-      { id: "C-01", name: "SUUMO", purpose: "問い合わせ", target: "第1ターゲット", share: 50, reason: "r", evidence: ["B-06"] },
-      { id: "C-06", name: "Instagram広告", purpose: "認知", target: "第1ターゲット", share: 30, reason: "r", evidence: ["B-06"] },
-      { id: "C-12", name: "ポスティング", purpose: "認知", target: "第2ターゲット", share: 20, reason: "r", evidence: ["X-99"] },
+      { id: "C-01", name: "SUUMO", purpose: "問い合わせ", target: "第1ターゲット", share: 50, share_reason: "s", reason: "r", evidence: ["B-06"] },
+      { id: "C-06", name: "Instagram広告", purpose: "認知", target: "第1ターゲット", share: 30, share_reason: "s", reason: "r", evidence: ["B-06"] },
+      { id: "C-12", name: "ポスティング", purpose: "認知", target: "第2ターゲット", share: 20, share_reason: "s", reason: "r", evidence: ["X-99"] },
     ],
     cautions: [],
     ...overrides,
@@ -91,6 +91,14 @@ describe("点検（プログラム）", () => {
     expect(problems).toEqual(["媒体が2件です（3〜6件にする）", "配分の合計が80%です（100%にする）"]);
     const bad = media({ media: [...media().media.slice(0, 2), { ...media().media[0], id: "C-99", share: 20 }] });
     expect(checkProgram(main(), bad, FACTS, MEDIA_IDS).map((i) => i.problem)).toContain("媒体一覧にない媒体です：C-99");
+  });
+
+  it("割合の理由（share_reason）も禁止語を点検する", () => {
+    const m = media();
+    m.media[0] = { ...m.media[0], share_reason: "最適な割合" };
+    expect(checkProgram(main(), m, FACTS, MEDIA_IDS)).toContainEqual(
+      { target: "媒体", location: "media[0]", check_name: "禁止語", problem: "禁止語があります：最適", action: "記録だけ" },
+    );
   });
 
   it("「外す」の文だけ取り除く", () => {

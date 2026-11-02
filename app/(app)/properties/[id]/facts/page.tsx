@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSql } from "../../../../../lib/db";
+import { formatJstDateTime } from "../../../../../lib/facts/format";
 import type { FactSheet } from "../../../../../lib/facts/types";
 import { parsePropertyId } from "../../../../../lib/property";
 import { btnPrimary, card, emptyState } from "../../../../_lib/ui";
@@ -48,7 +49,7 @@ export default async function FactSheetPage({ params, searchParams }: PageProps<
         // 表はレポートの「根拠データ」と同じもの（FactSheetTable）。収まらないときは横スクロール
         <section className={`${card} p-5 min-w-0`}>
           <div className="text-[13px] text-sub mb-4">
-            作成日時 {latest.content.作成日時}（距離はすべて{latest.content.距離の種類}）・事実 {facts.length}件・取得できず／要確認 {missing.length}件
+            事実シート作成：{formatJstDateTime(latest.content.作成日時)}（距離はすべて{latest.content.距離の種類}）・事実 {facts.length}件・取得できず／要確認 {missing.length}件
             {missing.length > 0 && `（${missing.map((f) => f.id).join("、")}）`}
           </div>
           <FactSheetTable facts={facts} />

@@ -19,6 +19,18 @@ export function nowJstIso(now = new Date()): string {
   return `${new Date(now.getTime() + 9 * 3600_000).toISOString().slice(0, 19)}+09:00`;
 }
 
+/** 画面に出す日本時間の日時（2026/11/1 21:30）。秒は出さない */
+export function formatJstDateTime(value: Date | string): string {
+  return new Date(value).toLocaleString("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 /** 3桁ごとのカンマ */
 export function formatNumber(n: number, digits = 0): string {
   return n.toLocaleString("ja-JP", { minimumFractionDigits: digits, maximumFractionDigits: digits });

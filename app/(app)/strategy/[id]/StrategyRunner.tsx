@@ -30,12 +30,15 @@ export default function StrategyRunner({
   propertyId,
   initial,
   hasReport,
+  lastCreatedAt,
   hasLocation,
   children,
 }: {
   propertyId: number;
   initial: RunStatus | null;
   hasReport: boolean;
+  /** 画面に出しているレポートを作り終えた日時（日本時間、表示用）。AIの費用は strategy_runs.cost_usd に保存し、画面には出さない */
+  lastCreatedAt: string | null;
   hasLocation: boolean;
   children: React.ReactNode;
 }) {
@@ -104,7 +107,7 @@ export default function StrategyRunner({
               {running ? "作成しています…" : hasReport ? "戦略を作り直す" : "戦略を作る"}
             </button>
           </div>
-          {!running && run?.status === "succeeded" && <div className="text-[12px] text-muted">前回の作成：AIの費用 ${run.costUsd.toFixed(4)}</div>}
+          {!running && lastCreatedAt && <div className="text-[12px] text-muted">前回の作成：{lastCreatedAt}</div>}
         </div>
       </div>
       {!hasReport && !running && (
