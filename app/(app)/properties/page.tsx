@@ -3,6 +3,7 @@ import { getSql } from "../../../lib/db";
 import { formatNumber } from "../../../lib/facts/format";
 import { PlusIcon } from "../../_components/icons";
 import { btnAction, card, emptyState, tableHead } from "../../_lib/ui";
+import DeletePropertyButton from "./DeletePropertyButton";
 
 // 物件一覧。物件ごとに販売戦略の状態（未実行／実行中／完了／失敗）と第1ターゲットを出し、行を押すと物件の画面（/properties/[id]）を開く
 // 販売戦略を一度でも作った物件は、「販売戦略」の欄からレポート（/strategy/[id]）を開ける
@@ -11,7 +12,7 @@ import { btnAction, card, emptyState, tableHead } from "../../_lib/ui";
 
 export const dynamic = "force-dynamic";
 
-const COLS = "grid-cols-[1.1fr_2.4fr_0.6fr_0.9fr_0.8fr_0.8fr_1.3fr]";
+const COLS = "grid-cols-[1.1fr_2.4fr_0.6fr_0.9fr_0.8fr_0.8fr_1.3fr_0.4fr]";
 
 const STATUS: Record<string, { label: string; className: string }> = {
   queued: { label: "実行中", className: "text-primary font-bold" },
@@ -63,6 +64,7 @@ export default async function PropertyListPage() {
             <div>間取り</div>
             <div>販売戦略</div>
             <div>第1ターゲット</div>
+            <div />
           </div>
           {rows.map((p) => (
             // 行全体を物件の画面へのリンクにし、販売戦略の欄だけ上に重ねてレポートへのリンクにする（リンクの入れ子を避ける）
@@ -83,6 +85,7 @@ export default async function PropertyListPage() {
                 )}
               </div>
               <div className="text-body">{p.first_target ?? "―"}</div>
+              <DeletePropertyButton propertyId={Number(p.id)} code={p.code} />
             </div>
           ))}
         </div>

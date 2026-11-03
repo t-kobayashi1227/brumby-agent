@@ -57,9 +57,9 @@ export const strategySchema = z.object({
 });
 export type StrategyOutput = z.infer<typeof strategySchema>;
 
-/** 戦略の答えから、媒体担当に渡す部分（分析を除いた戦略）だけを取り出す */
-export function mainPart(strategy: StrategyOutput): MainOutput {
-  return mainSchema.parse(strategy);
+/** 戦略の答えから、媒体担当に渡す部分（unknown を除いた戦略）だけを取り出す。2026-11-02 から分析（analysis）も渡す（配分を物件ごとに変えるため） */
+export function mainPart(strategy: StrategyOutput): MainOutput & Pick<StrategyOutput, "analysis"> {
+  return { analysis: strategy.analysis, ...mainSchema.parse(strategy) };
 }
 
 export const mediaSchema = z.object({

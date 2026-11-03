@@ -12,7 +12,7 @@ export default function Sidebar() {
     <nav className="print:hidden w-52.5 shrink-0 bg-linear-to-b from-[#2d6fe6] via-[#3f84f0] to-[#6aa6f7] text-white py-5 px-2.5 flex flex-col">
       <div className="px-2 pb-6 mb-2">
         <Link href="/properties" className="flex items-center justify-center">
-          <Image src="/brumby_logo_mark_white.png" alt="BRUMBY AI物件販売戦略" width={132} height={88} className="h-16 w-auto" loading="eager" />
+          <Image src="/brumby_logo.png" alt="BRUMBY AI物件販売戦略" width={850} height={640} className="h-16 w-auto" loading="eager" />
         </Link>
       </div>
       <div className="grid gap-1">

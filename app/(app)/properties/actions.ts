@@ -241,6 +241,16 @@ export async function regeocode(propertyId: number): Promise<PropertyFormState> 
   return warning ? { error: warning } : { ok: "住所から位置を取り直しました。地図のピンを確かめてください。" };
 }
 
+/** 物件を削除する（事実シート・販売戦略・販売の記録なども、外部キーの on delete cascade で一緒に消える） */
+export async function deleteProperty(propertyId: number): Promise<PropertyFormState> {
+  if (parsePropertyId(propertyId) === null) return { error: "物件の番号が正しくありません。画面を読み込み直してください" };
+  const rows = await getSql()`delete from properties where id = ${propertyId} returning id`;
+  if (rows.length === 0) return { error: `物件 ${propertyId} がありません` };
+  revalidatePath("/properties");
+  revalidatePath("/records");
+  return { ok: "削除しました。" };
+}
+
 /** 登録の前に、住所が国土地理院の住所検索で見つかるかを確かめる（保存はしない） */
 export async function previewAddress(address: string): Promise<PropertyFormState> {
   const q = String(address ?? "").trim();
